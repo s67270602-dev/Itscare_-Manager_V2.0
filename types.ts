@@ -14,7 +14,7 @@ export interface Agreement {
   fault: boolean;
 }
 
-export type ContractStatus = 'active' | 'ended';
+export type ContractStatus = 'active' | 'ended' | 'suspended';
 
 export interface Contract {
   id: string;

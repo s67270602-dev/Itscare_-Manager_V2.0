@@ -1,3 +1,4 @@
+
 <!doctype html>
 <html lang="ko">
   <head>
@@ -52,35 +53,28 @@
         }
       }
     </style>
-
-    <!-- ⚠️ importmap은 "모듈 스크립트보다 먼저" 있어야 합니다 -->
-    <script type="importmap">
+  <script type="importmap">
 {
   "imports": {
+    "jspdf": "https://esm.sh/jspdf@^4.0.0",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
+    "lucide-react": "https://esm.sh/lucide-react@^0.563.0",
     "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
+    "vite": "https://esm.sh/vite@^7.3.1",
     "react/": "https://esm.sh/react@^19.2.3/",
     "react": "https://esm.sh/react@^19.2.3",
-    "html2canvas": "https://esm.sh/html2canvas@1.4.1",
-    "jspdf": "https://esm.sh/jspdf@2.5.1",
+    "html2canvas": "https://esm.sh/html2canvas@^1.4.1",
+    "resend": "https://esm.sh/resend@^6.8.0",
     "jsonwebtoken": "https://esm.sh/jsonwebtoken@^9.0.3",
-    "cookie": "https://esm.sh/cookie@^1.1.1",
-    "resend": "https://esm.sh/resend@^6.8.0"
+    "cookie": "https://esm.sh/cookie@^1.1.1"
   }
 }
 </script>
-  </head>
+</head>
 
   <body class="bg-gray-50 text-slate-800">
     <noscript>이 페이지는 JavaScript가 필요합니다.</noscript>
     <div id="root"></div>
-
-    <!-- ✅ 핵심: React 앱 엔트리 로드 (현재 레포에 index.tsx가 "루트"에 있으니 이렇게) -->
     <script type="module" src="/index.tsx"></script>
-
-    <!--
-      만약 React 엔트리가 /src/main.tsx 이라면 위 한 줄을 아래처럼 바꾸세요:
-      <script type="module" src="/src/main.tsx"></script>
-    -->
   </body>
 </html>

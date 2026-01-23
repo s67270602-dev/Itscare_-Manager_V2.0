@@ -24,11 +24,12 @@ export interface Contract {
   
   shopName: string;
   ownerName: string;
-  contactNumber: string; // Added field
+  contactNumber: string;
   address: string;
+  region: string; // Added field for region (Busan, Ulsan, etc.)
   model: string;
   capacity: string;
-  quantity: number; // Added field for number of units
+  quantity: number;
   
   cycleMonths: number;
   firstDate: string;
@@ -50,6 +51,6 @@ export interface Contract {
 }
 
 export type ContractFormState = Omit<Contract, 'id' | 'version' | 'status' | 'createdAt' | 'updatedAt'> & {
-  id: string | null; // null for new
+  id: string | null;
   status: ContractStatus;
 };

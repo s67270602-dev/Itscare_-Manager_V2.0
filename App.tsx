@@ -2,7 +2,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   CheckCircle2, AlertCircle, User, Lock, LogIn, Import, PenTool, Send, LogOut, FileDown,
-  RotateCcw, FileText, List, Printer, Save, Upload, FileJson, ChevronRight, Layout
+  RotateCcw, FileText, List, Printer, Save, Upload, FileJson, ChevronRight, Layout, Edit, Search, Archive
 } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
@@ -29,6 +29,7 @@ const initialFormState: ContractFormState = {
   ownerName: '',
   contactNumber: '',
   address: '',
+  region: '부산', // Default region
   model: '',
   capacity: '',
   quantity: 1,
@@ -64,6 +65,10 @@ function App() {
   // --- App State ---
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [form, setForm] = useState<ContractFormState>(initialFormState);
+  
+  // Dashboard State
+  const [searchTerm, setSearchTerm] = useState('');
+  const [regionFilter, setRegionFilter] = useState('전체'); // 전체, 부산, 울산, 양산, 김해
   
   // PDF & Print State
   const [pdfTarget, setPdfTarget] = useState<ContractFormState | null>(null);
@@ -110,6 +115,8 @@ function App() {
     setExpandedId(null);
     setPinInput('');
     setMobileTab('form');
+    setSearchTerm('');
+    setRegionFilter('전체');
   };
 
   const loadLocalContracts = () => {
@@ -130,7 +137,7 @@ function App() {
   // --- JSON Save/Load Utility ---
   const handleSaveJson = (data: any, prefix: string) => {
     try {
-        const fileName = `${prefix}_${data.shopName || 'noname'}_${fmt(new Date())}.json`;
+        const fileName = `${prefix}_${fmt(new Date())}.json`;
         const jsonString = JSON.stringify(data, null, 2);
         const blob = new Blob([jsonString], { type: "application/json" });
         const link = document.createElement("a");
@@ -209,24 +216,43 @@ function App() {
         const json = event.target?.result as string;
         const data = JSON.parse(json);
         
-        if (!data.shopName) throw new Error("유효하지 않은 파일입니다.");
+        // Handle both single object and array of objects
+        let newItems: Contract[] = [];
+        if (Array.isArray(data)) {
+            newItems = data;
+        } else {
+            newItems = [data];
+        }
 
         setContracts(prev => {
-            const exists = prev.some(c => c.id === data.id);
-            if (exists) {
-                showToast("이미 등록된 계약서입니다.", 'error');
-                return prev;
+            const currentIds = new Set(prev.map(c => c.id));
+            const merged = [...prev];
+            let addedCount = 0;
+
+            newItems.forEach(item => {
+                if (!item.shopName) return;
+                // If ID missing, gen new. If ID exists, skip to prevent duplicates unless explicit logic added.
+                if (!item.id) item.id = uid();
+                
+                if (!currentIds.has(item.id)) {
+                    merged.push({
+                        ...item,
+                        region: item.region || '부산', // Default for legacy data
+                        status: item.status || 'active'
+                    });
+                    addedCount++;
+                }
+            });
+            
+            if (addedCount > 0) {
+                 localStorage.setItem("itscare_contracts_v1", JSON.stringify(merged));
+                 showToast(`${addedCount}건의 계약서를 불러왔습니다.`);
+                 return merged;
+            } else {
+                 showToast("새로운 데이터가 없습니다.");
+                 return prev;
             }
-            const newContract = {
-                ...data,
-                id: data.id || uid(),
-                status: data.status || 'active'
-            };
-            const updated = [newContract, ...prev];
-            localStorage.setItem("itscare_contracts_v1", JSON.stringify(updated));
-            return updated;
         });
-        showToast("계약서를 불러왔습니다.");
       } catch (err) {
         console.error(err);
         showToast("파일 형식이 올바르지 않습니다.", 'error');
@@ -322,11 +348,27 @@ function App() {
     return errors;
   };
 
+  // --- Edit Handler (Owner) ---
+  const handleEditContract = (c: Contract) => {
+    if (!confirm(`[${c.shopName}] 계약서를 수정하시겠습니까?\n작성 화면으로 이동합니다.`)) return;
+    
+    // Explicitly set state to ensure editor loads correctly
+    const newFormState = {
+        ...initialFormState,
+        ...c,
+        agree: { ...initialFormState.agree, ...c.agree }
+    };
+    
+    setForm(newFormState);
+    setSigPadKey(prev => prev + 1); // Force signature pad reload
+    setViewState('owner_editor');
+  };
+
   // --- SUBMIT: Engineer (Send to Server) ---
   const handleSubmitContract = async () => {
     const errors = validateForm();
     if (errors.length > 0) {
-      showToast(`확인 필요: ${errors.join(", ")}`, 'error');
+      showToast(`[전송 불가] 확인 필요: ${errors.join(", ")}`, 'error');
       return;
     }
 
@@ -367,36 +409,59 @@ function App() {
   };
 
   // --- SUBMIT: Owner (Save to LocalStorage) ---
-  const handleOwnerSaveContract = () => {
+  const handleOwnerSaveContract = async () => {
      const errors = validateForm();
      if (errors.length > 0) {
-       showToast(`확인 필요: ${errors.join(", ")}`, 'error');
+       // Make error message very visible
+       showToast(`[저장 실패] 필수 입력 누락: ${errors.join(", ")}`, 'error');
        return;
      }
 
-     if (!confirm("계약서를 목록에 저장하시겠습니까?")) return;
+     if (!confirm("계약서를 저장하시겠습니까?")) return;
+
+     setIsSubmitting(true); // Show loading state on button
+
+     // Add artificial delay for UX (visual feedback)
+     await new Promise(resolve => setTimeout(resolve, 600));
+
+     const now = new Date().toISOString();
+     const contractId = form.id || uid();
+     
+     // Check if updating existing
+     const existing = contracts.find(c => c.id === contractId);
 
      const newContract: Contract = {
         ...form,
-        id: form.id || uid(),
-        version: 1,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        status: 'active',
+        id: contractId,
+        version: existing ? (existing.version + 1) : 1,
+        createdAt: existing ? existing.createdAt : now,
+        updatedAt: now,
+        status: form.status || 'active',
         scheduleMeta: form.scheduleMeta!,
         signedDate: form.signedDate || fmt(new Date())
      };
 
      setContracts(prev => {
-        const next = [newContract, ...prev];
+        const index = prev.findIndex(c => c.id === contractId);
+        let next;
+        if (index >= 0) {
+             // Update existing
+             next = [...prev];
+             next[index] = newContract;
+             showToast("계약서가 수정되었습니다.");
+        } else {
+             // Append new
+             next = [newContract, ...prev];
+             showToast("목록에 저장되었습니다.");
+        }
         localStorage.setItem("itscare_contracts_v1", JSON.stringify(next));
         return next;
      });
 
-     showToast("목록에 저장되었습니다.");
      setViewState('owner_dashboard');
      setForm(initialFormState);
      setSigPadKey(prev => prev + 1);
+     setIsSubmitting(false);
   };
 
 
@@ -416,7 +481,11 @@ function App() {
         {role === 'owner' && (
           <div className="flex bg-gray-100 rounded-lg p-1 ml-2">
             <button 
-              onClick={() => setViewState('owner_editor')}
+              onClick={() => {
+                setForm(initialFormState);
+                setSigPadKey(prev => prev + 1);
+                setViewState('owner_editor');
+              }}
               className={`px-3 py-1.5 rounded-md text-sm font-bold transition-all flex items-center gap-1 ${
                 viewState === 'owner_editor' ? 'bg-white text-emerald-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
               }`}
@@ -552,6 +621,17 @@ function App() {
 
   // 3. OWNER DASHBOARD (LIST VIEW)
   if (viewState === 'owner_dashboard' && role === 'owner') {
+    const REGIONS = ['전체', '부산', '울산', '양산', '김해'];
+    
+    // Filter Logic
+    const filteredContracts = contracts.filter(c => {
+        const matchesRegion = regionFilter === '전체' || (c.region || '부산') === regionFilter;
+        const matchesSearch = searchTerm === '' 
+          || c.shopName.toLowerCase().includes(searchTerm.toLowerCase())
+          || c.ownerName.toLowerCase().includes(searchTerm.toLowerCase());
+        return matchesRegion && matchesSearch;
+    });
+
     return (
       <div className="min-h-screen bg-gray-50 pt-16 print:hidden">
         <HiddenPdfTemplate />
@@ -566,66 +646,121 @@ function App() {
         )}
 
         <div className="max-w-4xl mx-auto mt-8 px-4 pb-20">
-          <div className="flex justify-between items-center mb-4">
-             <h2 className="text-xl font-bold text-gray-800">📂 저장된 계약 목록 ({contracts.length})</h2>
-             <div className="flex gap-2">
-                <input type="file" ref={fileInputRef} onChange={handleListFileUpload} accept=".json" className="hidden" />
-                <button onClick={() => fileInputRef.current?.click()} className="bg-white border border-gray-300 text-gray-700 px-3 py-2 rounded-lg text-sm font-bold flex items-center gap-1 hover:bg-gray-50 shadow-sm">
-                  <Import size={16} /> 파일 불러오기
-                </button>
+          
+          {/* Dashboard Controls */}
+          <div className="bg-white rounded-xl border border-gray-200 p-4 mb-6 shadow-sm">
+             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
+                 <h2 className="text-xl font-bold text-gray-800">📂 계약서 관리</h2>
+                 
+                 <div className="flex flex-wrap gap-2 w-full md:w-auto">
+                    <input type="file" ref={fileInputRef} onChange={handleListFileUpload} accept=".json" className="hidden" />
+                    <button onClick={() => fileInputRef.current?.click()} className="flex-1 md:flex-none bg-white border border-gray-300 text-gray-700 px-3 py-2 rounded-lg text-sm font-bold flex justify-center items-center gap-1 hover:bg-gray-50 shadow-sm">
+                      <Import size={16} /> 불러오기
+                    </button>
+                    <button onClick={() => handleSaveJson(contracts, 'ALL_BACKUP')} className="flex-1 md:flex-none bg-emerald-50 border border-emerald-200 text-emerald-700 px-3 py-2 rounded-lg text-sm font-bold flex justify-center items-center gap-1 hover:bg-emerald-100 shadow-sm">
+                      <Archive size={16} /> 전체 내보내기
+                    </button>
+                 </div>
+             </div>
+             
+             {/* Search & Tabs */}
+             <div className="flex flex-col gap-4">
+                <div className="relative">
+                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                   <input 
+                     type="text" 
+                     placeholder="매장명 또는 고객명 검색..." 
+                     className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
+                     value={searchTerm}
+                     onChange={(e) => setSearchTerm(e.target.value)}
+                   />
+                </div>
+                
+                <div className="flex gap-1 overflow-x-auto pb-1 no-scrollbar">
+                   {REGIONS.map(r => (
+                      <button 
+                        key={r}
+                        onClick={() => setRegionFilter(r)}
+                        className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-colors border ${
+                            regionFilter === r 
+                            ? 'bg-gray-800 text-white border-gray-800' 
+                            : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'
+                        }`}
+                      >
+                        {r}
+                      </button>
+                   ))}
+                </div>
              </div>
           </div>
 
+          <div className="flex justify-between items-center mb-2 px-1">
+             <span className="text-sm font-bold text-gray-500">
+               총 {filteredContracts.length}건
+               {searchTerm && ` (검색됨)`}
+             </span>
+          </div>
+
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden min-h-[300px]">
-             {contracts.length === 0 ? (
+             {filteredContracts.length === 0 ? (
                <div className="p-12 text-center text-gray-400 flex flex-col items-center justify-center h-full">
                   <FileText size={48} className="mb-4 text-gray-200" />
-                  <p>불러온 계약서가 없습니다.</p>
-                  <p className="text-sm mt-2">이메일로 받은 JSON 파일을 불러오거나<br/>[작성] 메뉴에서 새 계약서를 만드세요.</p>
+                  <p>조건에 맞는 계약서가 없습니다.</p>
+                  <p className="text-sm mt-2">검색어를 확인하거나 새로운 계약서를 작성하세요.</p>
                </div>
              ) : (
                <div className="divide-y divide-gray-100">
-                 {contracts.map(c => (
+                 {filteredContracts.map(c => (
                    <div key={c.id} className="p-5 hover:bg-gray-50 transition cursor-pointer" onClick={() => setExpandedId(prev => prev === c.id ? null : c.id)}>
                       <div className="flex justify-between items-center">
-                        <div>
-                          <span className="font-bold text-gray-900 text-lg">{c.shopName}</span>
-                          <span className="text-gray-500 ml-2">({c.ownerName})</span>
+                        <div className="flex items-center gap-3">
+                           <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 font-bold text-xs">
+                             {c.region ? c.region.slice(0,2) : '부산'}
+                           </div>
+                           <div>
+                              <div className="flex items-center gap-2">
+                                 <span className="font-bold text-gray-900 text-lg">{c.shopName}</span>
+                                 <span className="text-gray-500 text-sm">({c.ownerName})</span>
+                              </div>
+                              <div className="text-xs text-gray-400 mt-0.5">{c.address || '주소 미입력'}</div>
+                           </div>
                         </div>
-                        <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded font-medium">{c.status}</span>
+                        <ChevronRight size={20} className={`text-gray-300 transition-transform ${expandedId === c.id ? 'rotate-90' : ''}`}/>
                       </div>
                       
                       {expandedId === c.id && (
-                        <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-600 animate-fade-in">
+                        <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-600 animate-fade-in bg-gray-50/50 -mx-5 px-5 pb-2">
                            <div className="flex flex-col gap-1">
                               <span className="font-semibold text-gray-400 text-xs">연락처</span>
                               <span>{c.contactNumber}</span>
                            </div>
                            <div className="flex flex-col gap-1">
-                              <span className="font-semibold text-gray-400 text-xs">주소</span>
-                              <span>{c.address}</span>
-                           </div>
-                           <div className="flex flex-col gap-1">
                               <span className="font-semibold text-gray-400 text-xs">계약 기간</span>
                               <span>{c.contractStart} ~ {c.contractEnd}</span>
                            </div>
-                           <div className="flex justify-end items-end gap-2 mt-4 md:mt-0">
-                              {/* Print Button for Owner List */}
+                           <div className="col-span-1 md:col-span-2 flex flex-wrap justify-end gap-2 mt-2">
+                              {/* Edit Button */}
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); handleEditContract(c); }}
+                                className="bg-white border border-gray-300 text-emerald-600 px-3 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-emerald-50 transition-colors shadow-sm"
+                              >
+                                 <Edit size={16} /> 수정
+                              </button>
                               <button 
                                 onClick={(e) => { e.stopPropagation(); handlePrint(c); }}
-                                className="bg-white border border-gray-300 text-gray-600 px-3 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-gray-50 transition-colors"
+                                className="bg-white border border-gray-300 text-gray-600 px-3 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-gray-50 transition-colors shadow-sm"
                               >
                                  <Printer size={16} /> 인쇄
                               </button>
                               <button 
                                 onClick={(e) => { e.stopPropagation(); handleSaveJson(c, 'backup'); }}
-                                className="bg-white border border-gray-300 text-gray-600 px-3 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-gray-50 transition-colors"
+                                className="bg-white border border-gray-300 text-gray-600 px-3 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-gray-50 transition-colors shadow-sm"
                               >
                                  <FileJson size={16} /> JSON
                               </button>
                               <button 
                                 onClick={(e) => { e.stopPropagation(); handleDownloadPdf(c); }}
-                                className="bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-gray-900 transition-colors"
+                                className="bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-gray-900 transition-colors shadow-sm"
                               >
                                  <FileDown size={16} /> PDF 저장
                               </button>
@@ -701,7 +836,7 @@ function App() {
                   <div>
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-2 border-b pb-1 gap-1">
                        <h2 className="text-base font-bold text-gray-800 flex items-center gap-1">
-                          <span className="text-xl">📝</span> 새 계약 작성
+                          <span className="text-xl">📝</span> {form.id ? '계약 수정' : '새 계약 작성'}
                        </h2>
                        
                        {/* Input is shared and always rendered but hidden */}
@@ -729,6 +864,26 @@ function App() {
                     </div>
 
                     <div className="space-y-2">
+                       {/* Region Selection */}
+                       <div className="bg-gray-50 p-2 rounded-lg border border-gray-100 mb-2">
+                          <label className="text-[11px] font-bold text-gray-500 mb-1 block">지역 선택</label>
+                          <div className="grid grid-cols-4 gap-1">
+                             {['부산', '울산', '양산', '김해'].map(r => (
+                               <button 
+                                 key={r}
+                                 onClick={() => handleInputChange('region', r)}
+                                 className={`py-1.5 text-xs font-bold rounded border transition-all ${
+                                    form.region === r 
+                                    ? 'bg-gray-800 text-white border-gray-800 shadow-sm' 
+                                    : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-100'
+                                 }`}
+                               >
+                                 {r}
+                               </button>
+                             ))}
+                          </div>
+                       </div>
+
                        <div className="grid grid-cols-2 gap-2">
                           <input className="input-field" placeholder="매장명" value={form.shopName} onChange={(e) => handleInputChange('shopName', e.target.value)} />
                           <input className="input-field" placeholder="대표자명" value={form.ownerName} onChange={(e) => handleInputChange('ownerName', e.target.value)} />
@@ -824,9 +979,21 @@ function App() {
                   ) : (
                     <button 
                       onClick={handleOwnerSaveContract} 
-                      className="w-full bg-emerald-600 text-white py-3 rounded-xl font-bold shadow-lg hover:bg-emerald-700 transition-all flex justify-center items-center gap-2 mt-2"
+                      disabled={isSubmitting}
+                      className={`w-full py-3 rounded-xl font-bold shadow-lg transition-all flex justify-center items-center gap-2 mt-2 ${
+                         isSubmitting ? 'bg-emerald-800 text-gray-200' : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                      }`}
                     >
-                       <Save size={18} /> 저장 (목록에 추가)
+                       {isSubmitting ? (
+                          <>
+                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                            저장 중...
+                          </>
+                       ) : (
+                          <>
+                            <Save size={18} /> {form.id ? '수정 저장 (목록 업데이트)' : '저장 (목록에 추가)'}
+                          </>
+                       )}
                     </button>
                   )}
                </div>
@@ -898,6 +1065,13 @@ function App() {
           .custom-scrollbar::-webkit-scrollbar-thumb {
             background-color: #cbd5e1;
             border-radius: 4px;
+          }
+          .no-scrollbar::-webkit-scrollbar {
+            display: none;
+          }
+          .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
           }
         `}</style>
       </div>

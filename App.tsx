@@ -154,67 +154,149 @@ function App() {
     }
   };
 
-  // --- PDF Download Handler (Updated for Multi-page) ---
+  // --- PDF Download Handler (Smart Split) ---
   const handleDownloadPdf = async (targetData: ContractFormState) => {
     setPdfTarget(targetData);
     showToast("PDF 생성 중... (잠시만 기다려주세요)", 'success');
     
-    // Allow ample time for the hidden component to render fully
-    setTimeout(async () => {
-      const element = document.getElementById('hidden-pdf-template');
-      if (!element) {
-        showToast("PDF 템플릿 오류", 'error');
+    // Wait for render
+    await new Promise(resolve => setTimeout(resolve, 800));
+
+    const source = document.getElementById('hidden-pdf-template');
+    if (!source) {
+      showToast("PDF 템플릿 오류", 'error');
+      setPdfTarget(null);
+      return;
+    }
+
+    // 1. DOM Elements Extraction
+    // Target the inner container provided by ContractPaper
+    const rootContent = source.firstElementChild as HTMLElement; 
+    if (!rootContent) return;
+
+    // ContractPaper structure:
+    // [0]: Title div
+    // [1]: Section Container (space-y-8)
+    const titleBlock = rootContent.children[0] as HTMLElement;
+    const sectionContainer = rootContent.children[1] as HTMLElement;
+    
+    if (!titleBlock || !sectionContainer) {
+        // Fallback for safety
+        console.error("DOM structure mismatch");
         setPdfTarget(null);
         return;
-      }
-      
-      try {
-        // Capture the full height of the element
-        const canvas = await html2canvas(element, {
-          scale: 2, // Higher scale for clarity
-          useCORS: true,
-          logging: false,
-          width: element.offsetWidth,
-          height: element.offsetHeight,
-          windowWidth: element.scrollWidth,
-          windowHeight: element.scrollHeight,
-          x: 0,
-          y: 0
+    }
+
+    const sections = Array.from(sectionContainer.children) as HTMLElement[];
+
+    // 2. Setup Staging Area (Invisible)
+    const stagingId = "pdf-smart-staging";
+    let staging = document.getElementById(stagingId);
+    if (staging) staging.remove();
+    
+    staging = document.createElement("div");
+    staging.id = stagingId;
+    staging.style.position = "absolute";
+    staging.style.left = "-9999px";
+    staging.style.top = "0";
+    document.body.appendChild(staging);
+
+    // A4 Dimensions (px at 96dpi approx)
+    const PAGE_WIDTH = 794; 
+    const PAGE_HEIGHT = 1123;
+    const PADDING = 48; // p-12 equivalent
+    const CONTENT_WIDTH = PAGE_WIDTH; 
+    const SAFE_HEIGHT = PAGE_HEIGHT - (PADDING * 2);
+
+    // Helper: Create a new A4 Page Div
+    const createNewPage = () => {
+        const page = document.createElement("div");
+        Object.assign(page.style, {
+            width: `${PAGE_WIDTH}px`,
+            minHeight: `${PAGE_HEIGHT}px`,
+            backgroundColor: "white",
+            padding: `${PADDING}px`,
+            boxSizing: "border-box",
+            position: "relative",
         });
+        // Apply Tailwind classes for typography manually to ensure consistency
+        page.className = "text-sm leading-relaxed text-gray-800 font-sans";
+        return page;
+    };
 
-        const imgData = canvas.toDataURL('image/png');
-        const imgWidth = 210; // A4 width in mm
-        const pageHeight = 297; // A4 height in mm
-        
-        // Calculate the height of the image on the PDF
-        const imgHeight = (canvas.height * imgWidth) / canvas.width;
-        
-        let heightLeft = imgHeight;
-        let position = 0;
+    const pages: HTMLElement[] = [];
+    let currentPage = createNewPage();
+    let currentContentHeight = 0;
+    
+    pages.push(currentPage);
+    staging.appendChild(currentPage);
 
+    // Helper: Append Block with smart split check
+    const appendBlock = (element: HTMLElement, marginBottom = 0) => {
+        const clone = element.cloneNode(true) as HTMLElement;
+        clone.style.marginBottom = `${marginBottom}px`;
+        
+        // Append to measure
+        currentPage.appendChild(clone);
+        const blockHeight = clone.offsetHeight + marginBottom;
+        
+        // Check if overflows page
+        if (currentContentHeight + blockHeight > SAFE_HEIGHT) {
+            // Remove from current
+            currentPage.removeChild(clone);
+            
+            // Create new page
+            currentPage = createNewPage();
+            pages.push(currentPage);
+            staging.appendChild(currentPage);
+            
+            // Reset height tracker and append to new page
+            currentContentHeight = 0;
+            currentPage.appendChild(clone);
+            currentContentHeight += blockHeight;
+        } else {
+            currentContentHeight += blockHeight;
+        }
+    };
+
+    // 3. Process Content Blocks
+    // Title
+    appendBlock(titleBlock, 32); // mb-8 approx 32px
+
+    // Sections
+    sections.forEach((sec, idx) => {
+        // Apply spacing manually since we lost the 'space-y-8' context
+        const isLast = idx === sections.length - 1;
+        appendBlock(sec, isLast ? 0 : 32);
+    });
+
+    // 4. Render Pages to PDF
+    try {
         const pdf = new jsPDF('p', 'mm', 'a4');
-
-        // Add first page
-        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-        heightLeft -= pageHeight;
-
-        // Loop to add subsequent pages if content overflows
-        while (heightLeft > 0) {
-          position -= pageHeight; // Move image up
-          pdf.addPage();
-          pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-          heightLeft -= pageHeight;
+        
+        for (let i = 0; i < pages.length; i++) {
+            if (i > 0) pdf.addPage();
+            
+            const canvas = await html2canvas(pages[i], {
+                scale: 2, // High res
+                logging: false,
+                useCORS: true
+            });
+            
+            const imgData = canvas.toDataURL('image/png');
+            pdf.addImage(imgData, 'PNG', 0, 0, 210, 297);
         }
 
         pdf.save(`contract_${targetData.shopName || 'document'}.pdf`);
         showToast("PDF 다운로드 완료");
-      } catch (err) {
-        console.error("PDF gen error:", err);
+
+    } catch (err) {
+        console.error("PDF generation error", err);
         showToast("PDF 생성 실패", 'error');
-      } finally {
+    } finally {
+        if (staging) staging.remove();
         setPdfTarget(null);
-      }
-    }, 800); // 800ms delay to ensure rendering
+    }
   };
 
   // --- Print Handler ---
@@ -649,8 +731,14 @@ function App() {
   );
 
   const HiddenPdfTemplate = () => (
-    <div style={{ position: 'fixed', left: '-10000px', top: 0, zIndex: -50 }}>
-       <div id="hidden-pdf-template" style={{ width: '210mm', minHeight: '297mm', background: 'white' }}>
+    <div style={{ 
+      position: 'absolute', 
+      left: '-9999px', 
+      top: 0, 
+      width: '210mm', // A4 width
+      zIndex: -50 
+    }}>
+       <div id="hidden-pdf-template" className="bg-white">
           {pdfTarget && <ContractPaper data={pdfTarget} printMode={true} />}
        </div>
     </div>

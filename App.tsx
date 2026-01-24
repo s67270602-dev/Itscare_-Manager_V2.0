@@ -154,10 +154,12 @@ function App() {
     }
   };
 
-  // --- PDF Download Handler ---
+  // --- PDF Download Handler (Updated for Multi-page) ---
   const handleDownloadPdf = async (targetData: ContractFormState) => {
     setPdfTarget(targetData);
-    showToast("PDF 변환 중...", 'success');
+    showToast("PDF 생성 중... (잠시만 기다려주세요)", 'success');
+    
+    // Allow ample time for the hidden component to render fully
     setTimeout(async () => {
       const element = document.getElementById('hidden-pdf-template');
       if (!element) {
@@ -165,27 +167,54 @@ function App() {
         setPdfTarget(null);
         return;
       }
+      
       try {
+        // Capture the full height of the element
         const canvas = await html2canvas(element, {
-          scale: 2,
+          scale: 2, // Higher scale for clarity
           useCORS: true,
           logging: false,
-          windowWidth: 794,
+          width: element.offsetWidth,
+          height: element.offsetHeight,
+          windowWidth: element.scrollWidth,
+          windowHeight: element.scrollHeight,
+          x: 0,
+          y: 0
         });
+
         const imgData = canvas.toDataURL('image/png');
+        const imgWidth = 210; // A4 width in mm
+        const pageHeight = 297; // A4 height in mm
+        
+        // Calculate the height of the image on the PDF
+        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+        
+        let heightLeft = imgHeight;
+        let position = 0;
+
         const pdf = new jsPDF('p', 'mm', 'a4');
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-        pdf.save(`contract_${targetData.shopName || 'download'}.pdf`);
+
+        // Add first page
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+
+        // Loop to add subsequent pages if content overflows
+        while (heightLeft > 0) {
+          position -= pageHeight; // Move image up
+          pdf.addPage();
+          pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+          heightLeft -= pageHeight;
+        }
+
+        pdf.save(`contract_${targetData.shopName || 'document'}.pdf`);
         showToast("PDF 다운로드 완료");
       } catch (err) {
-        console.error(err);
+        console.error("PDF gen error:", err);
         showToast("PDF 생성 실패", 'error');
       } finally {
         setPdfTarget(null);
       }
-    }, 300);
+    }, 800); // 800ms delay to ensure rendering
   };
 
   // --- Print Handler ---
@@ -620,8 +649,8 @@ function App() {
   );
 
   const HiddenPdfTemplate = () => (
-    <div style={{ position: 'fixed', left: '-9999px', top: 0, width: '210mm', minHeight: '297mm', background: 'white', zIndex: -1 }}>
-       <div id="hidden-pdf-template">
+    <div style={{ position: 'fixed', left: '-10000px', top: 0, zIndex: -50 }}>
+       <div id="hidden-pdf-template" style={{ width: '210mm', minHeight: '297mm', background: 'white' }}>
           {pdfTarget && <ContractPaper data={pdfTarget} printMode={true} />}
        </div>
     </div>

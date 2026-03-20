@@ -135,7 +135,6 @@ const csvToJson = (csv: string) => {
   return result;
 };
 
-// 🌟 구글 시트 전송 함수: text/plain으로 보내야 구글 보안벽을 우회하여 동기화가 잘 됩니다.
 const triggerGoogleSheetSync = (dataPayload: any) => {
   fetch(GOOGLE_SHEET_URL, {
     method: 'POST',
@@ -175,13 +174,26 @@ function App() {
   const editorFileInputRef = useRef<HTMLInputElement>(null); 
   const printRef = useRef<HTMLDivElement>(null);
 
-  // 🌟 앱 시작 시 "본사 데이터 동기화 중" 시각적 효과 추가
+  // 🌟 [수정됨] 실질적으로 구글 시트 데이터를 불러오는 동기화 로직
   useEffect(() => {
     const initSync = async () => {
-      // 본사 시트와 연결을 확인하는 시각적 딜레이 (1.5초)
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      loadLocalContracts();
-      setViewState('login');
+      try {
+        // 실제 구글 시트에서 데이터를 가져오는 요청 (doGet 함수 호출)
+        const response = await fetch(GOOGLE_SHEET_URL);
+        const remoteData = await response.json();
+        
+        if (remoteData && Array.isArray(remoteData)) {
+          setContracts(remoteData);
+          localStorage.setItem("itscare_contracts_v1", JSON.stringify(remoteData));
+          console.log("시트 데이터 동기화 완료");
+        }
+      } catch (err) {
+        console.error("실시간 동기화 실패, 로컬 데이터를 불러옵니다:", err);
+        loadLocalContracts(); // 실패 시 로컬 저장소 데이터라도 불러옴
+      } finally {
+        // 최소한의 시각적 로딩 시간을 보장하기 위해 0.8초 후 로그인 화면으로 전환
+        setTimeout(() => setViewState('login'), 800);
+      }
     };
     initSync();
   }, []);
@@ -782,7 +794,7 @@ function App() {
     </div>
   );
 
-  // 🌟 "데이터 동기화 중" 화면 로직
+  // 🌟 [수정됨] "데이터 동기화 중" 화면 로직
   if (viewState === 'loading') {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50">

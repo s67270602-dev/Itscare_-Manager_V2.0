@@ -14,8 +14,8 @@ import ContractPaper from './components/ContractPaper';
 
 const DEFAULT_MANAGER_EMAIL = "itscare.clean@gmail.com";
 
-// ✅ 확인된 성공 URL 적용
-const GOOGLE_SHEET_URL = "https://script.google.com/macros/s/AKfycbwnseRFxfEpefDHfKeyyzNd3bLHAyPz62yL9QJ0z4OAE-RAYPcT0HqazKs2Z-nXc0ad/exec"; 
+// ✅ 새로 발급받은 구글 시트 웹 앱 URL 적용 완료
+const GOOGLE_SHEET_URL = "https://script.google.com/macros/s/AKfycbwpzK47O2cdwLTlOIkmmDCSFMlGwnkZxCto04bMpLlkO_oPysGELzpdsMucUkNszZrv/exec"; 
 
 const OWNER_PIN = "20094316";
 const ENGINEER_PIN = "15777672";
@@ -135,10 +135,11 @@ const csvToJson = (csv: string) => {
   return result;
 };
 
+// 🌟 구글 시트로 데이터를 전송하는 핵심 함수
 const triggerGoogleSheetSync = (dataPayload: any) => {
   fetch(GOOGLE_SHEET_URL, {
     method: 'POST',
-    mode: 'no-cors', 
+    mode: 'no-cors', // CORS 에러 방지용 (응답을 받지는 않지만 전송은 됨)
     headers: {
       'Content-Type': 'text/plain', 
     },
@@ -179,14 +180,12 @@ function App() {
     setTimeout(() => setToast(null), 3000);
   };
 
-  // 🌟 [핵심 삽입] 로그인 직후 구글 시트 데이터를 실제로 가져오는 실질적 동기화 함수
   const syncWithGoogleSheet = async (targetRole: UserRole) => {
-    setViewState('loading'); // "구글 시트 실시간 동기화 중..." 화면 표시
+    setViewState('loading'); 
     try {
       const response = await fetch(GOOGLE_SHEET_URL);
       const remoteData = await response.json();
       
-      // 시트에 데이터가 있으면 가져오고, 없으면 빈 목록으로 로컬 찌꺼기 제거
       if (remoteData && Array.isArray(remoteData)) {
         setContracts(remoteData);
         localStorage.setItem("itscare_contracts_v1", JSON.stringify(remoteData));
@@ -196,7 +195,6 @@ function App() {
       console.error("실시간 동기화 실패. 마지막 로컬 데이터를 사용합니다.");
       loadLocalContracts();
     } finally {
-      // 동기화 시도가 끝나면 (성공이든 실패든) 대시보드로 이동
       setViewState(targetRole === 'owner' ? 'owner_dashboard' : 'engineer_editor');
     }
   };
@@ -207,11 +205,11 @@ function App() {
     const input = pinInput.trim();
     if (input === OWNER_PIN) {
       setRole('owner');
-      syncWithGoogleSheet('owner'); // 🌟 로그인 버튼 누른 직후 동기화 실행
+      syncWithGoogleSheet('owner');
       setPinInput('');
     } else if (input === ENGINEER_PIN) {
       setRole('engineer');
-      syncWithGoogleSheet('engineer'); // 🌟 로그인 버튼 누른 직후 동기화 실행
+      syncWithGoogleSheet('engineer');
       setPinInput('');
     } else {
       setAuthError('PIN 번호가 일치하지 않습니다.');
@@ -734,17 +732,17 @@ function App() {
          <div className="hidden lg:flex items-center gap-2 ml-auto mr-4">
             <div className="flex items-center gap-1 mr-2 border-r border-gray-200 pr-3">
                  <button 
-                  onClick={() => editorFileInputRef.current?.click()} 
-                  className="text-gray-500 hover:text-emerald-600 px-2 py-2 rounded-lg text-sm font-bold flex items-center gap-1 hover:bg-gray-50 transition-colors"
-                >
-                  <Upload size={16} /> 불러오기
-                </button>
-                <button 
-                  onClick={() => handleSaveCsv(form, 'draft')} 
-                  className="text-gray-500 hover:text-emerald-600 px-2 py-2 rounded-lg text-sm font-bold flex items-center gap-1 hover:bg-gray-50 transition-colors"
-                >
-                  <Save size={16} /> 저장
-                </button>
+                   onClick={() => editorFileInputRef.current?.click()} 
+                   className="text-gray-500 hover:text-emerald-600 px-2 py-2 rounded-lg text-sm font-bold flex items-center gap-1 hover:bg-gray-50 transition-colors"
+                 >
+                   <Upload size={16} /> 불러오기
+                 </button>
+                 <button 
+                   onClick={() => handleSaveCsv(form, 'draft')} 
+                   className="text-gray-500 hover:text-emerald-600 px-2 py-2 rounded-lg text-sm font-bold flex items-center gap-1 hover:bg-gray-50 transition-colors"
+                 >
+                   <Save size={16} /> 저장
+                 </button>
             </div>
 
             <button onClick={() => handleDownloadPdf(form)} className="bg-white border border-orange-200 text-orange-600 px-4 py-2 rounded-lg text-sm font-bold shadow-sm hover:bg-orange-50 flex items-center gap-2 transition-colors">
@@ -792,7 +790,6 @@ function App() {
     </div>
   );
 
-  // 🌟 [수정됨] 실질적으로 구글 시트 데이터를 가져오는 동안 표시될 로딩 화면
   if (viewState === 'loading') {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50">
@@ -1055,7 +1052,7 @@ function App() {
         </div>
 
         <div className="flex-1 flex flex-col lg:flex-row w-full lg:max-w-[1380px] lg:mx-auto lg:shadow-2xl lg:border-x border-gray-200 bg-white overflow-hidden h-full">
-           
+            
             <div className={`
                 ${mobileTab === 'form' ? 'flex flex-col' : 'hidden'} 
                 lg:flex lg:flex-col w-full lg:w-[400px] bg-white border-r border-gray-200 
@@ -1102,19 +1099,19 @@ function App() {
                        <div className="bg-gray-50 p-2 rounded-lg border border-gray-100 mb-2">
                           <label className="text-[11px] font-bold text-gray-500 mb-1 block">지역 선택</label>
                           <div className="grid grid-cols-4 gap-1">
-                             {['부산', '울산', '양산', '김해'].map(r => (
-                               <button 
-                                 key={r}
-                                 onClick={() => handleInputChange('region', r)}
-                                 className={`py-1.5 text-xs font-bold rounded border transition-all ${
-                                    form.region === r 
-                                    ? 'bg-gray-800 text-white border-gray-800 shadow-sm' 
-                                    : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-100'
-                                 }`}
-                               >
-                                 {r}
-                               </button>
-                             ))}
+                              {['부산', '울산', '양산', '김해'].map(r => (
+                                <button 
+                                  key={r}
+                                  onClick={() => handleInputChange('region', r)}
+                                  className={`py-1.5 text-xs font-bold rounded border transition-all ${
+                                     form.region === r 
+                                     ? 'bg-gray-800 text-white border-gray-800 shadow-sm' 
+                                     : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-100'
+                                  }`}
+                                >
+                                  {r}
+                                </button>
+                              ))}
                           </div>
                        </div>
 

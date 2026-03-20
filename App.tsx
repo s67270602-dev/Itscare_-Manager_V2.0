@@ -549,9 +549,23 @@ function App() {
     setViewState('owner_editor');
   };
 
+  // ✅ 삭제 시 구글 시트에도 삭제 요청(POST)을 전송하도록 수정됨
   const handleDeleteContract = (id: string) => {
     if(!confirm("정말로 이 계약서를 삭제하시겠습니까?\n삭제된 데이터는 복구할 수 없습니다.")) return;
     
+    // 1. 구글 시트로 삭제 요청(action: 'delete') 전송
+    fetch(GOOGLE_SHEET_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: {
+        'Content-Type': 'text/plain', 
+      },
+      body: JSON.stringify({ action: 'delete', id: id })
+    }).catch((err) => {
+      console.error("Google Sheet Delete Sync Error:", err);
+    });
+
+    // 2. 앱 내부 로컬 데이터 삭제
     setContracts(prev => {
         const next = prev.filter(c => c.id !== id);
         localStorage.setItem("itscare_contracts_v1", JSON.stringify(next));

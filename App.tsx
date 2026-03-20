@@ -150,7 +150,7 @@ const triggerGoogleSheetSync = (dataPayload: any) => {
 
 function App() {
   const [role, setRole] = useState<UserRole>(null);
-  const [viewState, setViewState] = useState<ViewState>('loading'); // 초기 상태를 loading으로 고정
+  const [viewState, setViewState] = useState<ViewState>('login'); // 처음엔 무조건 로그인 화면
   const [pinInput, setPinInput] = useState('');
   const [authError, setAuthError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -174,33 +174,30 @@ function App() {
   const editorFileInputRef = useRef<HTMLInputElement>(null); 
   const printRef = useRef<HTMLDivElement>(null);
 
-  // 🌟 [수정됨] 실질적으로 구글 시트 데이터를 불러오는 동기화 로직
-  useEffect(() => {
-    const initSync = async () => {
-      try {
-        // 실제 구글 시트에서 데이터를 가져오는 요청 (doGet 함수 호출)
-        const response = await fetch(GOOGLE_SHEET_URL);
-        const remoteData = await response.json();
-        
-        if (remoteData && Array.isArray(remoteData)) {
-          setContracts(remoteData);
-          localStorage.setItem("itscare_contracts_v1", JSON.stringify(remoteData));
-          console.log("시트 데이터 동기화 완료");
-        }
-      } catch (err) {
-        console.error("실시간 동기화 실패, 로컬 데이터를 불러옵니다:", err);
-        loadLocalContracts(); // 실패 시 로컬 저장소 데이터라도 불러옴
-      } finally {
-        // 최소한의 시각적 로딩 시간을 보장하기 위해 0.8초 후 로그인 화면으로 전환
-        setTimeout(() => setViewState('login'), 800);
-      }
-    };
-    initSync();
-  }, []);
-
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3000);
+  };
+
+  // 🌟 [핵심] 로그인 성공 시 구글 시트와 데이터를 실질적으로 동기화하는 함수
+  const syncWithGoogleSheet = async (targetRole: UserRole) => {
+    setViewState('loading'); // 동기화 중 화면 표시
+    try {
+      const response = await fetch(GOOGLE_SHEET_URL);
+      const remoteData = await response.json();
+      
+      if (remoteData && Array.isArray(remoteData)) {
+        setContracts(remoteData);
+        localStorage.setItem("itscare_contracts_v1", JSON.stringify(remoteData));
+        console.log("구글 시트 동기화 완료:", remoteData.length, "건");
+      }
+    } catch (err) {
+      console.error("동기화 실패, 로컬 데이터를 사용합니다.");
+      loadLocalContracts();
+    } finally {
+      // 동기화 완료 후 해당 모드로 이동
+      setViewState(targetRole === 'owner' ? 'owner_dashboard' : 'engineer_editor');
+    }
   };
 
   const handleLogin = (e: React.FormEvent) => {
@@ -209,11 +206,11 @@ function App() {
     const input = pinInput.trim();
     if (input === OWNER_PIN) {
       setRole('owner');
-      setViewState('owner_dashboard');
+      syncWithGoogleSheet('owner'); // 로그인 성공 후 동기화 시작
       setPinInput('');
     } else if (input === ENGINEER_PIN) {
       setRole('engineer');
-      setViewState('engineer_editor');
+      syncWithGoogleSheet('engineer'); // 로그인 성공 후 동기화 시작
       setPinInput('');
     } else {
       setAuthError('PIN 번호가 일치하지 않습니다.');
@@ -794,13 +791,13 @@ function App() {
     </div>
   );
 
-  // 🌟 [수정됨] "데이터 동기화 중" 화면 로직
+  // 🌟 [수정됨] "구글 시트 실시간 동기화 중" 화면 로직
   if (viewState === 'loading') {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50">
         <Loader2 className="animate-spin text-emerald-600 mb-4" size={48} />
         <h2 className="text-xl font-bold text-gray-800">이끌림 잇츠케어</h2>
-        <p className="text-gray-500 mt-2 font-medium animate-pulse">본사 데이터 동기화 중...</p>
+        <p className="text-gray-500 mt-2 font-medium animate-pulse">구글 시트 실시간 동기화 중...</p>
       </div>
     );
   }

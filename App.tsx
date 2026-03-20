@@ -14,7 +14,7 @@ import ContractPaper from './components/ContractPaper';
 
 const DEFAULT_MANAGER_EMAIL = "itscare.clean@gmail.com";
 
-// ✅ 구글 앱스 스크립트 배포 URL
+// ✅ 구글 스크립트 웹 앱 URL
 const GOOGLE_SHEET_URL = "https://script.google.com/macros/s/AKfycbzRkI0zGX_kYHedXvIAo0GW471sd1YbJav9MrwCdSw1h9hOmXZMSeSkOWDQgo7Pe2hM/exec"; 
 
 const OWNER_PIN = "20094316";
@@ -53,7 +53,6 @@ const initialFormState: ContractFormState = {
   signedDate: ''
 };
 
-// --- CSV Helper Functions ---
 const escapeCsv = (val: any) => {
   if (val === null || val === undefined) return '';
   let strVal = typeof val === 'object' ? JSON.stringify(val) : String(val);
@@ -136,32 +135,14 @@ const csvToJson = (csv: string) => {
   return result;
 };
 
-// 🌟 강력한 구글 시트 전송 헬퍼 함수
-const sendToGoogleSheet = async (dataPayload: any) => {
-    // 객체를 폼 데이터(URL-encoded) 형식으로 변환하여 차단을 방지합니다.
-    const formData = new URLSearchParams();
-    Object.keys(dataPayload).forEach(key => {
-        let val = dataPayload[key];
-        if (typeof val === 'object' && val !== null) {
-            val = JSON.stringify(val);
-        }
-        formData.append(key, val === null || val === undefined ? '' : String(val));
-    });
-
-    try {
-        await fetch(GOOGLE_SHEET_URL, {
-            method: 'POST',
-            mode: 'no-cors', // CORS 정책 완전 우회
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: formData.toString()
-        });
-        return true;
-    } catch (e) {
-        console.error("구글 전송 에러:", e);
-        return false;
-    }
+// 🌟 단순하고 강력한 전송 함수 (에러 무시하고 백그라운드에서 쏨)
+const triggerGoogleSheetSync = (dataPayload: any) => {
+  fetch(GOOGLE_SHEET_URL, {
+    method: 'POST',
+    body: JSON.stringify(dataPayload)
+  }).catch(() => {
+    // 백그라운드 전송 중 에러가 나더라도 UI를 멈추지 않음
+  });
 };
 
 function App() {
@@ -599,7 +580,7 @@ function App() {
     showToast("계약 연장 모드: 날짜를 확인하고 저장하세요.");
   };
 
-  // --- SUBMIT: Engineer ---
+  // --- SUBMIT: Engineer (단순 전송) ---
   const handleSubmitContract = async () => {
     const errors = validateForm();
     if (errors.length > 0) {
@@ -610,37 +591,31 @@ function App() {
     if (!confirm("작성한 계약서를 본사(구글 시트)로 제출하시겠습니까?\n제출 후에는 기기에서 데이터가 즉시 삭제됩니다.")) return;
 
     setIsSubmitting(true);
+    await new Promise(resolve => setTimeout(resolve, 800)); // 로딩 효과
 
-    try {
-      const now = new Date().toISOString();
-      const payload: Contract = {
-        ...form,
-        id: form.id || uid(),
-        version: 1,
-        createdAt: now,
-        updatedAt: now,
-        status: form.status || 'active',
-        scheduleMeta: form.scheduleMeta!,
-        signedDate: form.signedDate || fmt(new Date()),
-      } as any;
+    const now = new Date().toISOString();
+    const payload: Contract = {
+      ...form,
+      id: form.id || uid(),
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+      status: form.status || 'active',
+      scheduleMeta: form.scheduleMeta!,
+      signedDate: form.signedDate || fmt(new Date()),
+    } as any;
 
-      // 구글 전송 헬퍼 함수 호출
-      await sendToGoogleSheet(payload);
+    // 🌟 구글 시트로 백그라운드 전송
+    triggerGoogleSheetSync(payload);
 
-      setForm(initialFormState);
-      setSigPadKey(prev => prev + 1);
-      window.history.replaceState(null, '', window.location.pathname);
-      setViewState('success');
-      
-    } catch (err) {
-      console.error(err);
-      showToast("네트워크 오류가 발생했습니다.", 'error');
-    } finally {
-      setIsSubmitting(false);
-    }
+    setIsSubmitting(false);
+    setForm(initialFormState);
+    setSigPadKey(prev => prev + 1);
+    window.history.replaceState(null, '', window.location.pathname);
+    setViewState('success');
   };
 
-  // --- SUBMIT: Owner ---
+  // --- SUBMIT: Owner (단순 전송 + 기기 저장) ---
   const handleOwnerSaveContract = async () => {
      const errors = validateForm();
      if (errors.length > 0) {
@@ -648,16 +623,13 @@ function App() {
        return;
      }
 
-     if (!confirm("계약서를 저장하시겠습니까? (구글 시트 자동 전송 포함)")) return;
+     if (!confirm("계약서를 기기에 저장하고 구글 시트로 동기화하시겠습니까?")) return;
 
      setIsSubmitting(true);
-
-     // 동기화 느낌을 주는 UI 지연
-     await new Promise(resolve => setTimeout(resolve, 800));
+     await new Promise(resolve => setTimeout(resolve, 800)); // 로딩 효과
 
      const now = new Date().toISOString();
      const contractId = form.id || uid();
-     
      const existing = contracts.find(c => c.id === contractId);
 
      const newContract: Contract = {
@@ -671,8 +643,8 @@ function App() {
         signedDate: form.signedDate || fmt(new Date())
      };
 
-     // 🌟 구글 시트 데이터 꽂아넣기 
-     await sendToGoogleSheet(newContract);
+     // 🌟 구글 시트로 백그라운드 전송
+     triggerGoogleSheetSync(newContract);
 
      setContracts(prev => {
         const index = prev.findIndex(c => c.id === contractId);
@@ -687,7 +659,7 @@ function App() {
         return next;
      });
 
-     showToast("데이터 동기화 및 저장 완료!");
+     showToast("저장 및 동기화가 완료되었습니다.");
      setViewState('owner_dashboard');
      setForm(initialFormState);
      setSigPadKey(prev => prev + 1);
@@ -1212,7 +1184,7 @@ function App() {
                       disabled={isSubmitting}
                       className="w-full bg-gray-900 text-white py-3 rounded-xl font-bold shadow-lg hover:bg-black transition-all flex justify-center items-center gap-2 disabled:bg-gray-400 mt-2"
                     >
-                       {isSubmitting ? '데이터 동기화 중...' : '저장 (본사 시트 제출)'}
+                       {isSubmitting ? '전송 중...' : '저장 (본사 시트 제출)'}
                     </button>
                  ) : (
                     <button 

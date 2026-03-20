@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import {
   CheckCircle2, AlertCircle, User, Lock, LogIn, Import, PenTool, Send, LogOut, FileDown,
@@ -50,6 +49,89 @@ const initialFormState: ContractFormState = {
     fault: false
   },
   signedDate: ''
+};
+
+// --- CSV Helper Functions ---
+const escapeCsv = (val: any) => {
+  if (val === null || val === undefined) return '';
+  let strVal = typeof val === 'object' ? JSON.stringify(val) : String(val);
+  if (strVal.includes(',') || strVal.includes('"') || strVal.includes('\n')) {
+    return `"${strVal.replace(/"/g, '""')}"`;
+  }
+  return strVal;
+};
+
+const jsonToCsv = (data: any[]) => {
+  if (!data || data.length === 0) return '';
+  const keys = Object.keys(data[0]);
+  const header = keys.join(',');
+  const rows = data.map(row => keys.map(k => escapeCsv(row[k])).join(','));
+  return [header, ...rows].join('\n');
+};
+
+const csvToJson = (csv: string) => {
+  const rows: string[][] = [];
+  let currentRow: string[] = [];
+  let currentCell = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < csv.length; i++) {
+    const char = csv[i];
+    const nextChar = csv[i + 1];
+
+    if (char === '"') {
+      if (inQuotes && nextChar === '"') {
+        currentCell += '"';
+        i++; // Skip escaped quote
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === ',' && !inQuotes) {
+      currentRow.push(currentCell);
+      currentCell = '';
+    } else if ((char === '\n' || (char === '\r' && nextChar === '\n')) && !inQuotes) {
+      if (char === '\r') i++;
+      currentRow.push(currentCell);
+      rows.push(currentRow);
+      currentRow = [];
+      currentCell = '';
+    } else {
+      currentCell += char;
+    }
+  }
+  if (currentCell !== '' || currentRow.length > 0) {
+    currentRow.push(currentCell);
+    rows.push(currentRow);
+  }
+
+  if (rows.length < 2) return [];
+
+  const headers = rows[0];
+  const result = [];
+
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (row.length === 1 && row[0].trim() === '') continue; // Skip empty rows
+    const obj: any = {};
+    headers.forEach((header, index) => {
+      let val: any = row[index];
+      if (val !== undefined) {
+        try {
+          if (val === 'true') val = true;
+          else if (val === 'false') val = false;
+          else if (val === 'null' || val === '') val = null;
+          else if ((val.startsWith('{') && val.endsWith('}')) || (val.startsWith('[') && val.endsWith(']'))) {
+            val = JSON.parse(val);
+          } else if (!isNaN(Number(val)) && val.trim() !== '' && !val.startsWith('0')) {
+            val = Number(val);
+          }
+        } catch (e) { }
+        obj[header] = val;
+      }
+    });
+    result.push(obj);
+  }
+  return result;
 };
 
 function App() {
@@ -135,19 +217,22 @@ function App() {
     }
   };
 
-  // --- JSON Save/Load Utility ---
-  const handleSaveJson = (data: any, prefix: string) => {
+  // --- CSV Save/Load Utility ---
+  const handleSaveCsv = (data: any, prefix: string) => {
     try {
-        const fileName = `${prefix}_${fmt(new Date())}.json`;
-        const jsonString = JSON.stringify(data, null, 2);
-        const blob = new Blob([jsonString], { type: "application/json" });
+        const dataArray = Array.isArray(data) ? data : [data];
+        const csvString = jsonToCsv(dataArray);
+        const BOM = "\uFEFF"; // 한글 깨짐 방지
+        const blob = new Blob([BOM + csvString], { type: "text/csv;charset=utf-8;" });
+        
+        const fileName = `${prefix}_${fmt(new Date())}.csv`;
         const link = document.createElement("a");
         link.href = URL.createObjectURL(blob);
         link.download = fileName;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-        showToast("JSON 파일로 저장되었습니다.");
+        showToast("CSV 파일로 저장되었습니다.");
     } catch (e) {
         console.error(e);
         showToast("저장 중 오류가 발생했습니다.", 'error');
@@ -325,23 +410,17 @@ function App() {
     const reader = new FileReader();
     reader.onload = (event) => {
       try {
-        const json = event.target?.result as string;
-        const data = JSON.parse(json);
+        const csvData = event.target?.result as string;
+        const parsedData = csvToJson(csvData);
         
-        // Handle both single object and array of objects
-        let newItems: Contract[] = [];
-        if (Array.isArray(data)) {
-            newItems = data;
-        } else {
-            newItems = [data];
-        }
+        if (!parsedData || parsedData.length === 0) throw new Error("데이터가 없습니다.");
 
         setContracts(prev => {
             const currentIds = new Set(prev.map(c => c.id));
             const merged = [...prev];
             let addedCount = 0;
 
-            newItems.forEach(item => {
+            parsedData.forEach((item: any) => {
                 if (!item.shopName) return;
                 // If ID missing, gen new. If ID exists, skip to prevent duplicates unless explicit logic added.
                 if (!item.id) item.id = uid();
@@ -371,10 +450,10 @@ function App() {
       }
       if (fileInputRef.current) fileInputRef.current.value = '';
     };
-    reader.readAsText(file);
+    reader.readAsText(file, "utf-8");
   };
 
-  // 2. Editor Mode: Load JSON into Form (Draft)
+  // 2. Editor Mode: Load CSV into Form (Draft)
   const handleEditorFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -382,9 +461,12 @@ function App() {
     const reader = new FileReader();
     reader.onload = (event) => {
       try {
-        const json = event.target?.result as string;
-        const data = JSON.parse(json);
+        const csvData = event.target?.result as string;
+        const parsedData = csvToJson(csvData);
         
+        if (!parsedData || parsedData.length === 0) throw new Error("빈 데이터입니다.");
+
+        const data = parsedData[0];
         if (!data.shopName && !data.ownerName) throw new Error("빈 데이터입니다.");
 
         if (confirm("작성 중인 내용이 사라지고, 불러온 데이터로 대체됩니다.\n계속하시겠습니까?")) {
@@ -399,11 +481,11 @@ function App() {
         }
       } catch (err) {
         console.error(err);
-        showToast("올바른 JSON 파일이 아닙니다.", 'error');
+        showToast("올바른 CSV 파일이 아닙니다.", 'error');
       }
       if (editorFileInputRef.current) editorFileInputRef.current.value = '';
     };
-    reader.readAsText(file);
+    reader.readAsText(file, "utf-8");
   };
 
 
@@ -688,7 +770,7 @@ function App() {
       {/* NEW: Action Buttons in Header for Desktop */}
       {(viewState === 'engineer_editor' || viewState === 'owner_editor') && (
          <div className="hidden lg:flex items-center gap-2 ml-auto mr-4">
-            {/* JSON Actions for Desktop */}
+            {/* CSV Actions for Desktop */}
             <div className="flex items-center gap-1 mr-2 border-r border-gray-200 pr-3">
                  <button 
                   onClick={() => editorFileInputRef.current?.click()} 
@@ -697,7 +779,7 @@ function App() {
                   <Upload size={16} /> 불러오기
                 </button>
                 <button 
-                  onClick={() => handleSaveJson(form, 'draft')} 
+                  onClick={() => handleSaveCsv(form, 'draft')} 
                   className="text-gray-500 hover:text-emerald-600 px-2 py-2 rounded-lg text-sm font-bold flex items-center gap-1 hover:bg-gray-50 transition-colors"
                 >
                   <Save size={16} /> 저장
@@ -841,11 +923,11 @@ function App() {
                  <h2 className="text-xl font-bold text-gray-800">📂 계약서 관리</h2>
                  
                  <div className="flex flex-wrap gap-2 w-full md:w-auto">
-                    <input type="file" ref={fileInputRef} onChange={handleListFileUpload} accept=".json" className="hidden" />
+                    <input type="file" ref={fileInputRef} onChange={handleListFileUpload} accept=".csv" className="hidden" />
                     <button onClick={() => fileInputRef.current?.click()} className="flex-1 md:flex-none bg-white border border-gray-300 text-gray-700 px-3 py-2 rounded-lg text-sm font-bold flex justify-center items-center gap-1 hover:bg-gray-50 shadow-sm">
                       <Import size={16} /> 불러오기
                     </button>
-                    <button onClick={() => handleSaveJson(contracts, 'ALL_BACKUP')} className="flex-1 md:flex-none bg-emerald-50 border border-emerald-200 text-emerald-700 px-3 py-2 rounded-lg text-sm font-bold flex justify-center items-center gap-1 hover:bg-emerald-100 shadow-sm">
+                    <button onClick={() => handleSaveCsv(contracts, 'ALL_BACKUP')} className="flex-1 md:flex-none bg-emerald-50 border border-emerald-200 text-emerald-700 px-3 py-2 rounded-lg text-sm font-bold flex justify-center items-center gap-1 hover:bg-emerald-100 shadow-sm">
                       <Archive size={16} /> 전체 내보내기
                     </button>
                  </div>
@@ -961,10 +1043,10 @@ function App() {
                                  <Edit size={16} /> 수정
                               </button>
                               <button 
-                                onClick={(e) => { e.stopPropagation(); handleSaveJson(c, 'backup'); }}
+                                onClick={(e) => { e.stopPropagation(); handleSaveCsv(c, 'backup'); }}
                                 className="bg-white border border-gray-300 text-gray-600 px-3 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-gray-50 transition-colors shadow-sm"
                               >
-                                 <FileJson size={16} /> JSON
+                                 <FileJson size={16} /> CSV
                               </button>
                               <button 
                                 onClick={(e) => { e.stopPropagation(); handleDownloadPdf(c); }}
@@ -1022,7 +1104,7 @@ function App() {
 
         {/* --- DESKTOP CENTERED WRAPPER --- */}
         <div className="flex-1 flex flex-col lg:flex-row w-full lg:max-w-[1380px] lg:mx-auto lg:shadow-2xl lg:border-x border-gray-200 bg-white overflow-hidden h-full">
-            
+           
             {/* --- LEFT SIDEBAR (FORM) --- */}
             <div className={`
                 ${mobileTab === 'form' ? 'flex flex-col' : 'hidden'} 
@@ -1030,33 +1112,33 @@ function App() {
                 flex-1 lg:flex-none overflow-hidden z-10 
             `}>
                <div className="flex-1 overflow-y-auto p-4 lg:p-6 pb-32 space-y-4 custom-scrollbar">
-                  
-                  {/* Manager Email Info */}
-                  <div className="bg-green-50 border border-green-100 rounded-lg p-3">
+                 
+                 {/* Manager Email Info */}
+                 <div className="bg-green-50 border border-green-100 rounded-lg p-3">
                      <label className="text-[11px] font-bold text-green-700 mb-1 block">최신받음 이메일 (관리자)</label>
                      <div className="bg-white border border-green-200 rounded px-2 py-1.5 text-gray-600 text-xs font-medium break-all">
                         {DEFAULT_MANAGER_EMAIL}
                      </div>
                      <p className="text-[10px] text-green-600 mt-0.5">고객이 파일 전송 시 이 주소가 자동으로 입력됩니다.</p>
-                  </div>
+                 </div>
 
-                  {/* Form Section */}
-                  <div>
+                 {/* Form Section */}
+                 <div>
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-2 border-b pb-1 gap-1">
                        <h2 className="text-base font-bold text-gray-800 flex items-center gap-1">
                           <span className="text-xl">📝</span> {form.id ? '계약 수정' : '새 계약 작성'}
                        </h2>
                        
                        {/* Input is shared and always rendered but hidden */}
-                       <input type="file" ref={editorFileInputRef} onChange={handleEditorFileUpload} accept=".json" className="hidden" />
+                       <input type="file" ref={editorFileInputRef} onChange={handleEditorFileUpload} accept=".csv" className="hidden" />
 
-                       {/* JSON Load/Save Buttons (Mobile Only) */}
+                       {/* CSV Load/Save Buttons (Mobile Only) */}
                        <div className="flex gap-1 self-end sm:self-auto lg:hidden">
                           <button onClick={() => editorFileInputRef.current?.click()} className="text-[11px] px-2 py-1 bg-gray-50 hover:bg-gray-100 rounded text-gray-600 flex items-center gap-1 border border-gray-200 transition-colors" title="불러오기">
                               <Upload size={12}/> 불러오기
                           </button>
-                          <button onClick={() => handleSaveJson(form, 'draft')} className="text-[11px] px-2 py-1 bg-gray-50 hover:bg-gray-100 rounded text-gray-600 flex items-center gap-1 border border-gray-200 transition-colors" title="JSON 저장">
-                              <Save size={12}/> JSON 저장
+                          <button onClick={() => handleSaveCsv(form, 'draft')} className="text-[11px] px-2 py-1 bg-gray-50 hover:bg-gray-100 rounded text-gray-600 flex items-center gap-1 border border-gray-200 transition-colors" title="CSV 저장">
+                              <Save size={12}/> CSV 저장
                           </button>
                           <button onClick={resetForm} className="text-[11px] px-2 py-1 bg-red-50 hover:bg-red-100 rounded text-red-600 flex items-center gap-1 border border-red-100 transition-colors ml-1" title="초기화">
                               <RotateCcw size={12}/> 초기화
@@ -1133,10 +1215,10 @@ function App() {
 
                        <div className="flex gap-2">
                           <button onClick={calcAutoSchedule} className="flex-1 bg-blue-50 text-blue-600 hover:bg-blue-100 py-2 rounded-lg text-xs font-bold transition-colors flex justify-center items-center gap-1 border border-blue-100">
-                             🗓️ 일정 산정
+                              🗓️ 일정 산정
                           </button>
                           <button onClick={fillToday} className="flex-1 bg-gray-100 text-gray-600 hover:bg-gray-200 py-2 rounded-lg text-xs font-bold transition-colors border border-gray-200">
-                             오늘 기준 채우기
+                              오늘 기준 채우기
                           </button>
                        </div>
                        
@@ -1153,30 +1235,30 @@ function App() {
                           </div>
                        </div>
                     </div>
-                  </div>
+                 </div>
 
-                  {/* Signature Section */}
-                  <div className="bg-orange-50/50 p-3 rounded-xl border border-orange-100 mt-2">
-                      <h2 className="text-base font-bold text-gray-800 flex items-center gap-2 mb-2">
-                          <span className="text-xl">✍️</span> 서명 및 완료
-                      </h2>
-                      
-                      <div className="space-y-1 mb-2">
-                        <label className="flex items-center gap-2 text-xs cursor-pointer p-1.5 hover:bg-white rounded transition-colors">
-                          <input type="checkbox" className="w-3.5 h-3.5 text-orange-500 rounded focus:ring-orange-500" checked={form.agree.read} onChange={() => handleAgreeChange('read')} />
-                          <span className="font-medium text-gray-700">계약 내용 확인 동의</span>
-                        </label>
-                        <label className="flex items-center gap-2 text-xs cursor-pointer p-1.5 hover:bg-white rounded transition-colors">
-                          <input type="checkbox" className="w-3.5 h-3.5 text-orange-500 rounded focus:ring-orange-500" checked={form.agree.schedule} onChange={() => handleAgreeChange('schedule')} />
-                          <span className="font-medium text-gray-700">일정 산정 동의</span>
-                        </label>
-                      </div>
+                 {/* Signature Section */}
+                 <div className="bg-orange-50/50 p-3 rounded-xl border border-orange-100 mt-2">
+                     <h2 className="text-base font-bold text-gray-800 flex items-center gap-2 mb-2">
+                         <span className="text-xl">✍️</span> 서명 및 완료
+                     </h2>
+                     
+                     <div className="space-y-1 mb-2">
+                       <label className="flex items-center gap-2 text-xs cursor-pointer p-1.5 hover:bg-white rounded transition-colors">
+                         <input type="checkbox" className="w-3.5 h-3.5 text-orange-500 rounded focus:ring-orange-500" checked={form.agree.read} onChange={() => handleAgreeChange('read')} />
+                         <span className="font-medium text-gray-700">계약 내용 확인 동의</span>
+                       </label>
+                       <label className="flex items-center gap-2 text-xs cursor-pointer p-1.5 hover:bg-white rounded transition-colors">
+                         <input type="checkbox" className="w-3.5 h-3.5 text-orange-500 rounded focus:ring-orange-500" checked={form.agree.schedule} onChange={() => handleAgreeChange('schedule')} />
+                         <span className="font-medium text-gray-700">일정 산정 동의</span>
+                       </label>
+                     </div>
 
-                      <SignaturePad key={sigPadKey} value={form.signatureDataUrl} onChange={(val) => handleInputChange('signatureDataUrl', val)} />
-                  </div>
-                  
-                  {/* Main Action Buttons */}
-                  {role === 'engineer' ? (
+                     <SignaturePad key={sigPadKey} value={form.signatureDataUrl} onChange={(val) => handleInputChange('signatureDataUrl', val)} />
+                 </div>
+                 
+                 {/* Main Action Buttons */}
+                 {role === 'engineer' ? (
                     <button 
                       onClick={handleSubmitContract} 
                       disabled={isSubmitting}
@@ -1184,7 +1266,7 @@ function App() {
                     >
                        {isSubmitting ? '전송 중...' : '저장 (본사 제출)'}
                     </button>
-                  ) : (
+                 ) : (
                     <button 
                       onClick={handleOwnerSaveContract} 
                       disabled={isSubmitting}
@@ -1203,7 +1285,7 @@ function App() {
                           </>
                        )}
                     </button>
-                  )}
+                 )}
                </div>
             </div>
 

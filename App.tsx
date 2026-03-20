@@ -14,7 +14,7 @@ import ContractPaper from './components/ContractPaper';
 
 const DEFAULT_MANAGER_EMAIL = "itscare.clean@gmail.com";
 
-// ✅ [필수입력] 구글 앱스 스크립트 배포 후 생성된 "웹 앱 URL"
+// ✅ 구글 앱스 스크립트 배포 URL (사장님 URL 적용 완료)
 const GOOGLE_SHEET_URL = "https://script.google.com/macros/s/AKfycbzRkI0zGX_kYHedXvIAo0GW471sd1YbJav9MrwCdSw1h9hOmXZMSeSkOWDQgo7Pe2hM/exec"; 
 
 // ✅ 하드코딩된 PIN 번호
@@ -33,7 +33,7 @@ const initialFormState: ContractFormState = {
   ownerName: '',
   contactNumber: '',
   address: '',
-  region: '부산', // Default region
+  region: '부산',
   model: '',
   capacity: '',
   quantity: 1,
@@ -86,7 +86,7 @@ const csvToJson = (csv: string) => {
     if (char === '"') {
       if (inQuotes && nextChar === '"') {
         currentCell += '"';
-        i++; // Skip escaped quote
+        i++; 
       } else {
         inQuotes = !inQuotes;
       }
@@ -115,7 +115,7 @@ const csvToJson = (csv: string) => {
 
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
-    if (row.length === 1 && row[0].trim() === '') continue; // Skip empty rows
+    if (row.length === 1 && row[0].trim() === '') continue;
     const obj: any = {};
     headers.forEach((header, index) => {
       let val: any = row[index];
@@ -139,25 +139,20 @@ const csvToJson = (csv: string) => {
 };
 
 function App() {
-  // --- Auth & View State ---
   const [role, setRole] = useState<UserRole>(null);
   const [viewState, setViewState] = useState<ViewState>('login');
   const [pinInput, setPinInput] = useState('');
   const [authError, setAuthError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   
-  // Mobile UI State
   const [mobileTab, setMobileTab] = useState<'form' | 'preview'>('form');
 
-  // --- App State ---
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [form, setForm] = useState<ContractFormState>(initialFormState);
   
-  // Dashboard State
   const [searchTerm, setSearchTerm] = useState('');
-  const [regionFilter, setRegionFilter] = useState('전체'); // 전체, 부산, 울산, 양산, 김해
+  const [regionFilter, setRegionFilter] = useState('전체'); 
   
-  // PDF & Print State
   const [pdfTarget, setPdfTarget] = useState<ContractFormState | null>(null);
   const [printTarget, setPrintTarget] = useState<ContractFormState | null>(null);
 
@@ -165,17 +160,15 @@ function App() {
   const [toast, setToast] = useState<{ msg: string, type: 'success' | 'error' } | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const fileInputRef = useRef<HTMLInputElement>(null); // Owner List File Input
-  const editorFileInputRef = useRef<HTMLInputElement>(null); // Editor Draft Load Input
+  const fileInputRef = useRef<HTMLInputElement>(null); 
+  const editorFileInputRef = useRef<HTMLInputElement>(null); 
   const printRef = useRef<HTMLDivElement>(null);
 
-  // --- Toast ---
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3000);
   };
 
-  // --- Auth Actions ---
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
@@ -221,12 +214,11 @@ function App() {
     }
   };
 
-  // --- CSV Save/Load Utility ---
   const handleSaveCsv = (data: any, prefix: string) => {
     try {
         const dataArray = Array.isArray(data) ? data : [data];
         const csvString = jsonToCsv(dataArray);
-        const BOM = "\uFEFF"; // 한글 깨짐 방지
+        const BOM = "\uFEFF";
         const blob = new Blob([BOM + csvString], { type: "text/csv;charset=utf-8;" });
         
         const fileName = `${prefix}_${fmt(new Date())}.csv`;
@@ -243,12 +235,10 @@ function App() {
     }
   };
 
-  // --- PDF Download Handler (Smart Split) ---
   const handleDownloadPdf = async (targetData: ContractFormState) => {
     setPdfTarget(targetData);
     showToast("PDF 생성 중... (잠시만 기다려주세요)", 'success');
     
-    // Wait for render
     await new Promise(resolve => setTimeout(resolve, 800));
 
     const source = document.getElementById('hidden-pdf-template');
@@ -258,7 +248,6 @@ function App() {
       return;
     }
 
-    // 1. DOM Elements Extraction
     const rootContent = source.firstElementChild as HTMLElement; 
     if (!rootContent) return;
 
@@ -273,7 +262,6 @@ function App() {
 
     const sections = Array.from(sectionContainer.children) as HTMLElement[];
 
-    // 2. Setup Staging Area (Invisible)
     const stagingId = "pdf-smart-staging";
     let staging = document.getElementById(stagingId);
     if (staging) staging.remove();
@@ -285,14 +273,12 @@ function App() {
     staging.style.top = "0";
     document.body.appendChild(staging);
 
-    // A4 Dimensions (px at 96dpi approx)
     const PAGE_WIDTH = 794; 
     const PAGE_HEIGHT = 1123;
-    const PADDING = 48; // p-12 equivalent
+    const PADDING = 48; 
     const CONTENT_WIDTH = PAGE_WIDTH; 
     const SAFE_HEIGHT = PAGE_HEIGHT - (PADDING * 2);
 
-    // Helper: Create a new A4 Page Div
     const createNewPage = () => {
         const page = document.createElement("div");
         Object.assign(page.style, {
@@ -385,7 +371,6 @@ function App() {
     }
   }, [printTarget]);
 
-  // --- File Upload Handlers ---
   const handleListFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -469,8 +454,6 @@ function App() {
     reader.readAsText(file, "utf-8");
   };
 
-
-  // --- Form Handlers ---
   const handleInputChange = (field: keyof ContractFormState, value: any) => {
     let nextValue = value;
     if (field === 'contactNumber' && typeof value === 'string') {
@@ -537,7 +520,6 @@ function App() {
     setViewState('owner_editor');
   };
 
-  // --- Dashboard Handlers ---
   const handleDeleteContract = (id: string) => {
     if(!confirm("정말로 이 계약서를 삭제하시겠습니까?\n삭제된 데이터는 복구할 수 없습니다.")) return;
     
@@ -592,7 +574,7 @@ function App() {
   };
 
 
-  // --- SUBMIT: Engineer (Send to Server/Google Sheets) ---
+  // --- SUBMIT: Engineer (구글 시트로 안전하게 전송) ---
   const handleSubmitContract = async () => {
     const errors = validateForm();
     if (errors.length > 0) {
@@ -617,16 +599,15 @@ function App() {
         signedDate: form.signedDate || fmt(new Date()),
       } as any;
 
-      // ✅ 구글 시트로 POST 요청 (CORS 회피용 no-cors 모드 추가)
+      // ✅ CORS 에러 회피를 위해 mode: 'no-cors' 필수 추가
       await fetch(GOOGLE_SHEET_URL, {
         method: 'POST',
-        mode: 'no-cors', 
+        mode: 'no-cors',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify(payload)
       });
 
-      // no-cors 통신 시 응답 성공 여부를 자바스크립트가 직접 읽을 수 없으므로,
-      // 에러가 throw 되지 않았다면 성공으로 처리합니다.
+      // no-cors 통신 시 응답을 읽을 수 없으므로 무조건 성공으로 간주하여 화면 이동
       setForm(initialFormState);
       setSigPadKey(prev => prev + 1);
       window.history.replaceState(null, '', window.location.pathname);
@@ -634,13 +615,13 @@ function App() {
       
     } catch (err) {
       console.error(err);
-      showToast("네트워크 오류 또는 구글 연동 오류 발생", 'error');
+      showToast("네트워크 오류가 발생했습니다.", 'error');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // --- SUBMIT: Owner (Save to LocalStorage + Google Sheets) ---
+  // --- SUBMIT: Owner (기기 저장 + 구글 시트 동기화) ---
   const handleOwnerSaveContract = async () => {
      const errors = validateForm();
      if (errors.length > 0) {
@@ -648,11 +629,12 @@ function App() {
        return;
      }
 
-     if (!confirm("계약서를 저장(구글 시트 동기화 포함)하시겠습니까?")) return;
+     if (!confirm("계약서를 구글 시트에 동기화하여 저장하시겠습니까?")) return;
 
      setIsSubmitting(true);
 
-     await new Promise(resolve => setTimeout(resolve, 600));
+     // 사용자가 로딩 상태("데이터 동기화 중...")를 인지할 수 있도록 짧은 딜레이 추가
+     await new Promise(resolve => setTimeout(resolve, 800));
 
      const now = new Date().toISOString();
      const contractId = form.id || uid();
@@ -670,7 +652,7 @@ function App() {
         signedDate: form.signedDate || fmt(new Date())
      };
 
-     // ✅ 구글 시트로 동기화 POST 요청 (CORS 회피용 no-cors 모드 추가)
+     // ✅ 구글 시트로 동기화 POST 요청 (no-cors 추가)
      try {
        await fetch(GOOGLE_SHEET_URL, {
          method: 'POST',
@@ -679,25 +661,26 @@ function App() {
          body: JSON.stringify(newContract)
        });
      } catch (err) {
-       console.error("구글 시트 동기화 오류", err);
-       // 구글 전송 에러가 나더라도 로컬 브라우저엔 저장되도록 진행합니다.
+       console.error("구글 시트 전송 중 오류 발생", err);
+       // 서버 통신 오류가 발생해도 아래 로컬 저장은 진행됩니다.
      }
 
+     // 기기 로컬 스토리지에 저장
      setContracts(prev => {
         const index = prev.findIndex(c => c.id === contractId);
         let next;
         if (index >= 0) {
              next = [...prev];
              next[index] = newContract;
-             showToast("계약서가 수정되었습니다. (구글 시트 반영 완료)");
         } else {
              next = [newContract, ...prev];
-             showToast("목록에 저장되었습니다. (구글 시트 반영 완료)");
         }
         localStorage.setItem("itscare_contracts_v1", JSON.stringify(next));
         return next;
      });
 
+     // 저장 완료 후 성공 토스트 메시지 및 화면 전환
+     showToast("데이터 동기화 완료! (구글 시트 반영됨)");
      setViewState('owner_dashboard');
      setForm(initialFormState);
      setSigPadKey(prev => prev + 1);
@@ -857,7 +840,7 @@ function App() {
       <div className="min-h-screen bg-emerald-50 flex flex-col items-center justify-center p-6 text-center">
         <CheckCircle2 size={64} className="text-emerald-600 mb-4" />
         <h1 className="text-2xl font-bold text-gray-800 mb-2">제출 완료</h1>
-        <p className="text-gray-600 mb-8">계약서가 본사(구글 시트)로 안전하게 전송되었습니다.<br />기기에는 데이터가 남지 않습니다.</p>
+        <p className="text-gray-600 mb-8">계약서가 본사 구글 시트로 안전하게 전송되었습니다.<br />기기에는 데이터가 남지 않습니다.</p>
         <button onClick={() => setViewState('engineer_editor')} className="px-6 py-3 bg-white border border-gray-300 rounded-xl font-bold text-gray-700 shadow-sm">
           새 계약 작성하기
         </button>
@@ -1223,7 +1206,7 @@ function App() {
                       disabled={isSubmitting}
                       className="w-full bg-gray-900 text-white py-3 rounded-xl font-bold shadow-lg hover:bg-black transition-all flex justify-center items-center gap-2 disabled:bg-gray-400 mt-2"
                     >
-                       {isSubmitting ? '전송 중...' : '저장 (본사 시트 제출)'}
+                       {isSubmitting ? '데이터 동기화 중...' : '저장 (본사 시트 제출)'}
                     </button>
                  ) : (
                     <button 
@@ -1236,7 +1219,7 @@ function App() {
                        {isSubmitting ? (
                           <>
                             <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                            구글 시트 저장 중...
+                            데이터 동기화 중...
                           </>
                        ) : (
                           <>

@@ -15,7 +15,7 @@ import ContractPaper from './components/ContractPaper';
 const DEFAULT_MANAGER_EMAIL = "itscare.clean@gmail.com";
 
 // ✅ 구글 스크립트 웹 앱 URL (배포 후 받은 URL로 유지)
-const GOOGLE_SHEET_URL = "https://script.google.com/macros/s/AKfycby0y-rXqKi4fyTXLEOKuBDuTHOoq0mFIgnZNwvS5SQpW9ddryEV-V2kAA3gpsH0Dhwn/exec"; 
+const GOOGLE_SHEET_URL = "https://script.google.com/macros/s/AKfycbzwMIQZCkNpfKF5RAuPt06541fsreqTiRZZDMWxo3WtLfesLkXMxV3HZg-3gqEDYcQU/exec"; 
 
 const OWNER_PIN = "20094316";
 const ENGINEER_PIN = "15777672";

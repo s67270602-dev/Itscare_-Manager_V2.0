@@ -14,8 +14,8 @@ import ContractPaper from './components/ContractPaper';
 
 const DEFAULT_MANAGER_EMAIL = "itscare.clean@gmail.com";
 
-// ✅ 구글 스크립트 웹 앱 URL
-const GOOGLE_SHEET_URL = "https://script.google.com/macros/s/AKfycbzRkI0zGX_kYHedXvIAo0GW471sd1YbJav9MrwCdSw1h9hOmXZMSeSkOWDQgo7Pe2hM/exec"; 
+// ✅ 구글 스크립트 웹 앱 URL (배포 후 받은 URL로 유지)
+const GOOGLE_SHEET_URL = "https://script.google.com/macros/s/AKfycby0y-rXqKi4fyTXLEOKuBDuTHOoq0mFIgnZNwvS5SQpW9ddryEV-V2kAA3gpsH0Dhwn/exec"; 
 
 const OWNER_PIN = "20094316";
 const ENGINEER_PIN = "15777672";
@@ -135,13 +135,17 @@ const csvToJson = (csv: string) => {
   return result;
 };
 
-// 🌟 단순하고 강력한 전송 함수 (에러 무시하고 백그라운드에서 쏨)
+// 🌟 수정한 전송 함수: 구글 스크립트의 CORS 우회를 위해 mode: 'no-cors'를 사용합니다.
 const triggerGoogleSheetSync = (dataPayload: any) => {
   fetch(GOOGLE_SHEET_URL, {
     method: 'POST',
+    mode: 'no-cors', // 구글 스크립트 리다이렉트 대응
+    headers: {
+      'Content-Type': 'text/plain', // 프리플라이트 요청 방지를 위해 plain 사용
+    },
     body: JSON.stringify(dataPayload)
-  }).catch(() => {
-    // 백그라운드 전송 중 에러가 나더라도 UI를 멈추지 않음
+  }).catch((err) => {
+    console.error("Google Sheet Sync Error:", err);
   });
 };
 
@@ -580,7 +584,6 @@ function App() {
     showToast("계약 연장 모드: 날짜를 확인하고 저장하세요.");
   };
 
-  // --- SUBMIT: Engineer (단순 전송) ---
   const handleSubmitContract = async () => {
     const errors = validateForm();
     if (errors.length > 0) {
@@ -591,7 +594,7 @@ function App() {
     if (!confirm("작성한 계약서를 본사(구글 시트)로 제출하시겠습니까?\n제출 후에는 기기에서 데이터가 즉시 삭제됩니다.")) return;
 
     setIsSubmitting(true);
-    await new Promise(resolve => setTimeout(resolve, 800)); // 로딩 효과
+    await new Promise(resolve => setTimeout(resolve, 800)); 
 
     const now = new Date().toISOString();
     const payload: Contract = {
@@ -605,7 +608,6 @@ function App() {
       signedDate: form.signedDate || fmt(new Date()),
     } as any;
 
-    // 🌟 구글 시트로 백그라운드 전송
     triggerGoogleSheetSync(payload);
 
     setIsSubmitting(false);
@@ -615,7 +617,6 @@ function App() {
     setViewState('success');
   };
 
-  // --- SUBMIT: Owner (단순 전송 + 기기 저장) ---
   const handleOwnerSaveContract = async () => {
      const errors = validateForm();
      if (errors.length > 0) {
@@ -626,7 +627,7 @@ function App() {
      if (!confirm("계약서를 기기에 저장하고 구글 시트로 동기화하시겠습니까?")) return;
 
      setIsSubmitting(true);
-     await new Promise(resolve => setTimeout(resolve, 800)); // 로딩 효과
+     await new Promise(resolve => setTimeout(resolve, 800)); 
 
      const now = new Date().toISOString();
      const contractId = form.id || uid();
@@ -643,7 +644,6 @@ function App() {
         signedDate: form.signedDate || fmt(new Date())
      };
 
-     // 🌟 구글 시트로 백그라운드 전송
      triggerGoogleSheetSync(newContract);
 
      setContracts(prev => {
@@ -666,7 +666,6 @@ function App() {
      setIsSubmitting(false);
   };
 
-  // --- Sub-components ---
   const Header = () => (
     <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 lg:px-6 fixed top-0 w-full z-50 shadow-sm print:hidden">
       <div className="flex items-center gap-4 lg:gap-6">
@@ -1195,14 +1194,14 @@ function App() {
                       }`}
                     >
                        {isSubmitting ? (
-                          <>
-                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                            데이터 동기화 중...
-                          </>
+                         <>
+                           <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                           데이터 동기화 중...
+                         </>
                        ) : (
-                          <>
-                            <Save size={18} /> {form.id ? '수정 저장 (시트 동기화)' : '저장 (시트에 추가)'}
-                          </>
+                         <>
+                           <Save size={18} /> {form.id ? '수정 저장 (시트 동기화)' : '저장 (시트에 추가)'}
+                         </>
                        )}
                     </button>
                  )}

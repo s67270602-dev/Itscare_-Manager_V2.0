@@ -14,6 +14,9 @@ import ContractPaper from './components/ContractPaper';
 
 const DEFAULT_MANAGER_EMAIL = "itscare.clean@gmail.com";
 
+// ✅ [필수입력] 구글 앱스 스크립트 배포 후 생성된 "웹 앱 URL"을 아래에 붙여넣으세요.
+const GOOGLE_SHEET_URL = "https://script.google.com/macros/s/AKfycbzRkI0zGX_kYHedXvIAo0GW471sd1YbJav9MrwCdSw1h9hOmXZMSeSkOWDQgo7Pe2hM/exec"; 
+
 // ✅ 하드코딩된 PIN 번호
 const OWNER_PIN = "20094316";
 const ENGINEER_PIN = "15777672";
@@ -594,8 +597,6 @@ function App() {
 
     // Calculate new dates
     const oldEnd = new Date(c.contractEnd);
-    // New start = Old end + 1 day (or same cycle logic?) -> Let's simplify: Start date is "Today" or "Old End + 1"?
-    // Typically renewal starts after previous end.
     const newStart = addMonthsSafe(oldEnd, 0); // Just parse
     newStart.setDate(newStart.getDate() + 1); // +1 day
     
@@ -621,7 +622,7 @@ function App() {
   };
 
 
-  // --- SUBMIT: Engineer (Send to Server) ---
+  // --- SUBMIT: Engineer (Send to Server/Google Sheets) ---
   const handleSubmitContract = async () => {
     const errors = validateForm();
     if (errors.length > 0) {
@@ -629,23 +630,28 @@ function App() {
       return;
     }
 
-    if (!confirm("작성한 계약서를 본사로 제출하시겠습니까?\n제출 후에는 기기에서 데이터가 즉시 삭제됩니다.")) return;
+    if (!confirm("작성한 계약서를 본사(구글 시트)로 제출하시겠습니까?\n제출 후에는 기기에서 데이터가 즉시 삭제됩니다.")) return;
 
     setIsSubmitting(true);
 
     try {
-      const payload = {
+      const now = new Date().toISOString();
+      const payload: Contract = {
         ...form,
-        id: uid(),
-        submittedAt: new Date().toISOString(),
-        signedDate: form.signedDate || fmt(new Date())
-      };
-      const filename = `contract_${fmt(new Date())}_${form.shopName.replace(/\s/g, '')}.json`;
+        id: form.id || uid(),
+        version: 1,
+        createdAt: now,
+        updatedAt: now,
+        status: form.status || 'active',
+        scheduleMeta: form.scheduleMeta!,
+        signedDate: form.signedDate || fmt(new Date()),
+      } as any;
 
-      const res = await fetch('/api/sendContract', {
+      // ✅ 구글 시트로 POST 요청 (CORS 문제를 막기 위해 text/plain 사용)
+      const res = await fetch(GOOGLE_SHEET_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contractData: payload, filename, pin: ENGINEER_PIN })
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(payload)
       });
 
       if (res.ok) {
@@ -654,37 +660,33 @@ function App() {
         window.history.replaceState(null, '', window.location.pathname);
         setViewState('success');
       } else {
-        const data = await res.json();
-        showToast(`전송 실패: ${data.message || '오류'}`, 'error');
+        showToast(`전송 실패: 서버 오류 발생`, 'error');
       }
     } catch (err) {
       console.error(err);
-      showToast("네트워크 오류 발생", 'error');
+      showToast("네트워크 오류 또는 구글 연동 오류 발생", 'error');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // --- SUBMIT: Owner (Save to LocalStorage) ---
+  // --- SUBMIT: Owner (Save to LocalStorage + Google Sheets) ---
   const handleOwnerSaveContract = async () => {
      const errors = validateForm();
      if (errors.length > 0) {
-       // Make error message very visible
        showToast(`[저장 실패] 필수 입력 누락: ${errors.join(", ")}`, 'error');
        return;
      }
 
-     if (!confirm("계약서를 저장하시겠습니까?")) return;
+     if (!confirm("계약서를 저장(구글 시트 동기화 포함)하시겠습니까?")) return;
 
-     setIsSubmitting(true); // Show loading state on button
+     setIsSubmitting(true);
 
-     // Add artificial delay for UX (visual feedback)
      await new Promise(resolve => setTimeout(resolve, 600));
 
      const now = new Date().toISOString();
      const contractId = form.id || uid();
      
-     // Check if updating existing
      const existing = contracts.find(c => c.id === contractId);
 
      const newContract: Contract = {
@@ -698,18 +700,28 @@ function App() {
         signedDate: form.signedDate || fmt(new Date())
      };
 
+     // ✅ 구글 시트로 동기화 POST 요청
+     try {
+       await fetch(GOOGLE_SHEET_URL, {
+         method: 'POST',
+         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+         body: JSON.stringify(newContract)
+       });
+     } catch (err) {
+       console.error("구글 시트 동기화 오류", err);
+       // 에러가 나도 로컬에는 저장되도록 계속 진행
+     }
+
      setContracts(prev => {
         const index = prev.findIndex(c => c.id === contractId);
         let next;
         if (index >= 0) {
-             // Update existing
              next = [...prev];
              next[index] = newContract;
-             showToast("계약서가 수정되었습니다.");
+             showToast("계약서가 수정되었습니다. (구글 시트 반영 완료)");
         } else {
-             // Append new
              next = [newContract, ...prev];
-             showToast("목록에 저장되었습니다.");
+             showToast("목록에 저장되었습니다. (구글 시트 반영 완료)");
         }
         localStorage.setItem("itscare_contracts_v1", JSON.stringify(next));
         return next;
@@ -768,7 +780,7 @@ function App() {
         )}
       </div>
 
-      {/* NEW: Action Buttons in Header for Desktop */}
+      {/* Action Buttons in Header for Desktop */}
       {(viewState === 'engineer_editor' || viewState === 'owner_editor') && (
          <div className="hidden lg:flex items-center gap-2 ml-auto mr-4">
             {/* CSV Actions for Desktop */}
@@ -790,7 +802,6 @@ function App() {
             <button onClick={() => handleDownloadPdf(form)} className="bg-white border border-orange-200 text-orange-600 px-4 py-2 rounded-lg text-sm font-bold shadow-sm hover:bg-orange-50 flex items-center gap-2 transition-colors">
               <FileDown size={16} /> PDF
             </button>
-            {/* Global Print button is now in the main nav for Owners, but keep this for Engineers or quick access in Editor */}
             {role !== 'owner' && (
               <button 
                 onClick={() => handlePrint(form)}
@@ -818,7 +829,7 @@ function App() {
       position: 'absolute', 
       left: '-9999px', 
       top: 0, 
-      width: '210mm', // A4 width
+      width: '210mm',
       zIndex: -50 
     }}>
        <div id="hidden-pdf-template" className="bg-white">
@@ -882,7 +893,7 @@ function App() {
       <div className="min-h-screen bg-emerald-50 flex flex-col items-center justify-center p-6 text-center">
         <CheckCircle2 size={64} className="text-emerald-600 mb-4" />
         <h1 className="text-2xl font-bold text-gray-800 mb-2">제출 완료</h1>
-        <p className="text-gray-600 mb-8">계약서가 본사로 안전하게 전송되었습니다.<br />기기에는 데이터가 남지 않습니다.</p>
+        <p className="text-gray-600 mb-8">계약서가 본사(구글 시트)로 안전하게 전송되었습니다.<br />기기에는 데이터가 남지 않습니다.</p>
         <button onClick={() => setViewState('engineer_editor')} className="px-6 py-3 bg-white border border-gray-300 rounded-xl font-bold text-gray-700 shadow-sm">
           새 계약 작성하기
         </button>
@@ -918,7 +929,6 @@ function App() {
 
         <div className="max-w-4xl mx-auto mt-8 px-4 pb-20">
           
-          {/* Dashboard Controls */}
           <div className="bg-white rounded-xl border border-gray-200 p-4 mb-6 shadow-sm">
              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
                  <h2 className="text-xl font-bold text-gray-800">📂 계약서 관리</h2>
@@ -934,7 +944,6 @@ function App() {
                  </div>
              </div>
              
-             {/* Search & Tabs */}
              <div className="flex flex-col gap-4">
                 <div className="relative">
                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
@@ -1011,7 +1020,6 @@ function App() {
                               {c.status === 'suspended' && <span className="text-red-500 font-bold text-xs">(계약 중지됨)</span>}
                            </div>
                            <div className="col-span-1 md:col-span-2 flex flex-wrap justify-end gap-2 mt-2 border-t border-gray-200 pt-3">
-                              {/* New Actions */}
                               <button 
                                 onClick={(e) => { e.stopPropagation(); handleDeleteContract(c.id); }}
                                 className="bg-white border border-red-200 text-red-500 px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1 hover:bg-red-50 transition-colors shadow-sm"
@@ -1083,7 +1091,6 @@ function App() {
           </div>
         )}
 
-        {/* --- MOBILE TABS (Visible only on lg and below) --- */}
         <div className="lg:hidden shrink-0 flex border-b border-gray-200 bg-white z-40 relative shadow-sm">
            <button 
              onClick={() => setMobileTab('form')}
@@ -1103,10 +1110,9 @@ function App() {
            </button>
         </div>
 
-        {/* --- DESKTOP CENTERED WRAPPER --- */}
         <div className="flex-1 flex flex-col lg:flex-row w-full lg:max-w-[1380px] lg:mx-auto lg:shadow-2xl lg:border-x border-gray-200 bg-white overflow-hidden h-full">
            
-            {/* --- LEFT SIDEBAR (FORM) --- */}
+            {/* LEFT SIDEBAR (FORM) */}
             <div className={`
                 ${mobileTab === 'form' ? 'flex flex-col' : 'hidden'} 
                 lg:flex lg:flex-col w-full lg:w-[400px] bg-white border-r border-gray-200 
@@ -1114,7 +1120,6 @@ function App() {
             `}>
                <div className="flex-1 overflow-y-auto p-4 lg:p-6 pb-32 space-y-4 custom-scrollbar">
                  
-                 {/* Manager Email Info */}
                  <div className="bg-green-50 border border-green-100 rounded-lg p-3">
                      <label className="text-[11px] font-bold text-green-700 mb-1 block">최신받음 이메일 (관리자)</label>
                      <div className="bg-white border border-green-200 rounded px-2 py-1.5 text-gray-600 text-xs font-medium break-all">
@@ -1123,17 +1128,14 @@ function App() {
                      <p className="text-[10px] text-green-600 mt-0.5">고객이 파일 전송 시 이 주소가 자동으로 입력됩니다.</p>
                  </div>
 
-                 {/* Form Section */}
                  <div>
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-2 border-b pb-1 gap-1">
                        <h2 className="text-base font-bold text-gray-800 flex items-center gap-1">
                           <span className="text-xl">📝</span> {form.id ? '계약 수정' : '새 계약 작성'}
                        </h2>
                        
-                       {/* Input is shared and always rendered but hidden */}
                        <input type="file" ref={editorFileInputRef} onChange={handleEditorFileUpload} accept=".csv" className="hidden" />
 
-                       {/* CSV Load/Save Buttons (Mobile Only) */}
                        <div className="flex gap-1 self-end sm:self-auto lg:hidden">
                           <button onClick={() => editorFileInputRef.current?.click()} className="text-[11px] px-2 py-1 bg-gray-50 hover:bg-gray-100 rounded text-gray-600 flex items-center gap-1 border border-gray-200 transition-colors" title="불러오기">
                               <Upload size={12}/> 불러오기
@@ -1146,7 +1148,6 @@ function App() {
                           </button>
                        </div>
                        
-                       {/* Desktop Reset Button (since we moved Save/Load to header) */}
                        <div className="hidden lg:block">
                            <button onClick={resetForm} className="text-[11px] px-2 py-1 bg-red-50 hover:bg-red-100 rounded text-red-600 flex items-center gap-1 border border-red-100 transition-colors" title="초기화">
                               <RotateCcw size={12}/> 초기화
@@ -1155,7 +1156,6 @@ function App() {
                     </div>
 
                     <div className="space-y-2">
-                       {/* Region Selection */}
                        <div className="bg-gray-50 p-2 rounded-lg border border-gray-100 mb-2">
                           <label className="text-[11px] font-bold text-gray-500 mb-1 block">지역 선택</label>
                           <div className="grid grid-cols-4 gap-1">
@@ -1238,7 +1238,6 @@ function App() {
                     </div>
                  </div>
 
-                 {/* Signature Section */}
                  <div className="bg-orange-50/50 p-3 rounded-xl border border-orange-100 mt-2">
                      <h2 className="text-base font-bold text-gray-800 flex items-center gap-2 mb-2">
                          <span className="text-xl">✍️</span> 서명 및 완료
@@ -1258,14 +1257,13 @@ function App() {
                      <SignaturePad key={sigPadKey} value={form.signatureDataUrl} onChange={(val) => handleInputChange('signatureDataUrl', val)} />
                  </div>
                  
-                 {/* Main Action Buttons */}
                  {role === 'engineer' ? (
                     <button 
                       onClick={handleSubmitContract} 
                       disabled={isSubmitting}
                       className="w-full bg-gray-900 text-white py-3 rounded-xl font-bold shadow-lg hover:bg-black transition-all flex justify-center items-center gap-2 disabled:bg-gray-400 mt-2"
                     >
-                       {isSubmitting ? '전송 중...' : '저장 (본사 제출)'}
+                       {isSubmitting ? '전송 중...' : '저장 (본사 시트 제출)'}
                     </button>
                  ) : (
                     <button 
@@ -1278,11 +1276,11 @@ function App() {
                        {isSubmitting ? (
                           <>
                             <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                            저장 중...
+                            구글 시트 저장 중...
                           </>
                        ) : (
                           <>
-                            <Save size={18} /> {form.id ? '수정 저장 (목록 업데이트)' : '저장 (목록에 추가)'}
+                            <Save size={18} /> {form.id ? '수정 저장 (시트 동기화)' : '저장 (시트에 추가)'}
                           </>
                        )}
                     </button>
@@ -1290,7 +1288,7 @@ function App() {
                </div>
             </div>
 
-            {/* --- RIGHT CONTENT (PREVIEW) --- */}
+            {/* RIGHT CONTENT (PREVIEW) */}
             <div className={`
                 ${mobileTab === 'preview' ? 'flex flex-col' : 'hidden'}
                 lg:flex lg:flex-col flex-1 bg-gray-100/50 lg:bg-gray-100 relative overflow-hidden
@@ -1298,7 +1296,6 @@ function App() {
                <div className="flex-1 overflow-y-auto p-4 lg:p-6 custom-scrollbar">
                    <div className="max-w-[210mm] mx-auto pb-20 lg:pb-0">
                       
-                      {/* Local Header: Visible on Mobile Only */}
                       <div className="flex justify-between items-center mb-4 lg:hidden">
                           <h2 className="text-lg font-bold text-gray-700 flex items-center gap-2"><FileText size={20}/> 미리보기</h2>
                           <div className="flex gap-2">
@@ -1320,7 +1317,6 @@ function App() {
                           <ContractPaper data={form} />
                       </div>
 
-                      {/* Mobile Hint */}
                       <div className="lg:hidden mt-4 text-center text-gray-400 text-sm">
                         화면을 좌우로 스크롤하여 전체 내용을 확인하세요.
                       </div>

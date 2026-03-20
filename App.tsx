@@ -14,14 +14,12 @@ import ContractPaper from './components/ContractPaper';
 
 const DEFAULT_MANAGER_EMAIL = "itscare.clean@gmail.com";
 
-// ✅ 구글 앱스 스크립트 배포 URL (사장님 URL 적용 완료)
+// ✅ 구글 앱스 스크립트 배포 URL
 const GOOGLE_SHEET_URL = "https://script.google.com/macros/s/AKfycbzRkI0zGX_kYHedXvIAo0GW471sd1YbJav9MrwCdSw1h9hOmXZMSeSkOWDQgo7Pe2hM/exec"; 
 
-// ✅ 하드코딩된 PIN 번호
 const OWNER_PIN = "20094316";
 const ENGINEER_PIN = "15777672";
 
-// --- Types ---
 type UserRole = 'owner' | 'engineer' | null;
 type ViewState = 'loading' | 'login' | 'engineer_editor' | 'owner_dashboard' | 'owner_editor' | 'success';
 
@@ -136,6 +134,34 @@ const csvToJson = (csv: string) => {
     result.push(obj);
   }
   return result;
+};
+
+// 🌟 강력한 구글 시트 전송 헬퍼 함수
+const sendToGoogleSheet = async (dataPayload: any) => {
+    // 객체를 폼 데이터(URL-encoded) 형식으로 변환하여 차단을 방지합니다.
+    const formData = new URLSearchParams();
+    Object.keys(dataPayload).forEach(key => {
+        let val = dataPayload[key];
+        if (typeof val === 'object' && val !== null) {
+            val = JSON.stringify(val);
+        }
+        formData.append(key, val === null || val === undefined ? '' : String(val));
+    });
+
+    try {
+        await fetch(GOOGLE_SHEET_URL, {
+            method: 'POST',
+            mode: 'no-cors', // CORS 정책 완전 우회
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: formData.toString()
+        });
+        return true;
+    } catch (e) {
+        console.error("구글 전송 에러:", e);
+        return false;
+    }
 };
 
 function App() {
@@ -573,8 +599,7 @@ function App() {
     showToast("계약 연장 모드: 날짜를 확인하고 저장하세요.");
   };
 
-
-  // --- SUBMIT: Engineer (구글 시트로 안전하게 전송) ---
+  // --- SUBMIT: Engineer ---
   const handleSubmitContract = async () => {
     const errors = validateForm();
     if (errors.length > 0) {
@@ -599,15 +624,9 @@ function App() {
         signedDate: form.signedDate || fmt(new Date()),
       } as any;
 
-      // ✅ CORS 에러 회피를 위해 mode: 'no-cors' 필수 추가
-      await fetch(GOOGLE_SHEET_URL, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(payload)
-      });
+      // 구글 전송 헬퍼 함수 호출
+      await sendToGoogleSheet(payload);
 
-      // no-cors 통신 시 응답을 읽을 수 없으므로 무조건 성공으로 간주하여 화면 이동
       setForm(initialFormState);
       setSigPadKey(prev => prev + 1);
       window.history.replaceState(null, '', window.location.pathname);
@@ -621,7 +640,7 @@ function App() {
     }
   };
 
-  // --- SUBMIT: Owner (기기 저장 + 구글 시트 동기화) ---
+  // --- SUBMIT: Owner ---
   const handleOwnerSaveContract = async () => {
      const errors = validateForm();
      if (errors.length > 0) {
@@ -629,11 +648,11 @@ function App() {
        return;
      }
 
-     if (!confirm("계약서를 구글 시트에 동기화하여 저장하시겠습니까?")) return;
+     if (!confirm("계약서를 저장하시겠습니까? (구글 시트 자동 전송 포함)")) return;
 
      setIsSubmitting(true);
 
-     // 사용자가 로딩 상태("데이터 동기화 중...")를 인지할 수 있도록 짧은 딜레이 추가
+     // 동기화 느낌을 주는 UI 지연
      await new Promise(resolve => setTimeout(resolve, 800));
 
      const now = new Date().toISOString();
@@ -652,20 +671,9 @@ function App() {
         signedDate: form.signedDate || fmt(new Date())
      };
 
-     // ✅ 구글 시트로 동기화 POST 요청 (no-cors 추가)
-     try {
-       await fetch(GOOGLE_SHEET_URL, {
-         method: 'POST',
-         mode: 'no-cors', 
-         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-         body: JSON.stringify(newContract)
-       });
-     } catch (err) {
-       console.error("구글 시트 전송 중 오류 발생", err);
-       // 서버 통신 오류가 발생해도 아래 로컬 저장은 진행됩니다.
-     }
+     // 🌟 구글 시트 데이터 꽂아넣기 
+     await sendToGoogleSheet(newContract);
 
-     // 기기 로컬 스토리지에 저장
      setContracts(prev => {
         const index = prev.findIndex(c => c.id === contractId);
         let next;
@@ -679,14 +687,12 @@ function App() {
         return next;
      });
 
-     // 저장 완료 후 성공 토스트 메시지 및 화면 전환
-     showToast("데이터 동기화 완료! (구글 시트 반영됨)");
+     showToast("데이터 동기화 및 저장 완료!");
      setViewState('owner_dashboard');
      setForm(initialFormState);
      setSigPadKey(prev => prev + 1);
      setIsSubmitting(false);
   };
-
 
   // --- Sub-components ---
   const Header = () => (

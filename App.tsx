@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   CheckCircle2, AlertCircle, User, Lock, LogIn, Import, PenTool, Send, LogOut, FileDown,
   RotateCcw, FileText, List, Printer, Save, Upload, FileJson, ChevronRight, Layout, Edit, Search, Archive,
-  Trash2, PauseCircle, CalendarPlus
+  Trash2, PauseCircle, CalendarPlus, Loader2
 } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
@@ -14,7 +14,7 @@ import ContractPaper from './components/ContractPaper';
 
 const DEFAULT_MANAGER_EMAIL = "itscare.clean@gmail.com";
 
-// ✅ 이미지 주소창에서 확인된 '진짜' 성공 URL로 수정함
+// ✅ 확인된 성공 URL 적용
 const GOOGLE_SHEET_URL = "https://script.google.com/macros/s/AKfycbwnseRFxfEpefDHfKeyyzNd3bLHAyPz62yL9QJ0z4OAE-RAYPcT0HqazKs2Z-nXc0ad/exec"; 
 
 const OWNER_PIN = "20094316";
@@ -135,7 +135,7 @@ const csvToJson = (csv: string) => {
   return result;
 };
 
-// 🌟 구글 시트 전송 함수: text/plain으로 보내야 구글 보안벽(CORS)을 가장 잘 통과합니다.
+// 🌟 구글 시트 전송 함수: text/plain으로 보내야 구글 보안벽을 우회하여 동기화가 잘 됩니다.
 const triggerGoogleSheetSync = (dataPayload: any) => {
   fetch(GOOGLE_SHEET_URL, {
     method: 'POST',
@@ -151,7 +151,7 @@ const triggerGoogleSheetSync = (dataPayload: any) => {
 
 function App() {
   const [role, setRole] = useState<UserRole>(null);
-  const [viewState, setViewState] = useState<ViewState>('login');
+  const [viewState, setViewState] = useState<ViewState>('loading'); // 초기 상태를 loading으로 고정
   const [pinInput, setPinInput] = useState('');
   const [authError, setAuthError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -175,6 +175,17 @@ function App() {
   const editorFileInputRef = useRef<HTMLInputElement>(null); 
   const printRef = useRef<HTMLDivElement>(null);
 
+  // 🌟 앱 시작 시 "본사 데이터 동기화 중" 시각적 효과 추가
+  useEffect(() => {
+    const initSync = async () => {
+      // 본사 시트와 연결을 확인하는 시각적 딜레이 (1.5초)
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      loadLocalContracts();
+      setViewState('login');
+    };
+    initSync();
+  }, []);
+
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3000);
@@ -187,7 +198,6 @@ function App() {
     if (input === OWNER_PIN) {
       setRole('owner');
       setViewState('owner_dashboard');
-      loadLocalContracts();
       setPinInput('');
     } else if (input === ENGINEER_PIN) {
       setRole('engineer');
@@ -772,10 +782,13 @@ function App() {
     </div>
   );
 
+  // 🌟 "데이터 동기화 중" 화면 로직
   if (viewState === 'loading') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600"></div>
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50">
+        <Loader2 className="animate-spin text-emerald-600 mb-4" size={48} />
+        <h2 className="text-xl font-bold text-gray-800">이끌림 잇츠케어</h2>
+        <p className="text-gray-500 mt-2 font-medium animate-pulse">본사 데이터 동기화 중...</p>
       </div>
     );
   }

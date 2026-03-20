@@ -15,7 +15,7 @@ import ContractPaper from './components/ContractPaper';
 const DEFAULT_MANAGER_EMAIL = "itscare.clean@gmail.com";
 
 // ✅ 확인된 성공 URL 적용
-const GOOGLE_SHEET_URL = "https://script.google.com/macros/s/AKfycbwnseRFxfEpefDHfKeyyzNd3bLHAyPz62yL9QJ0z4OAE-RAYPcT0HqazKs2Z-nXc0ad/exec"; 
+const GOOGLE_SHEET_URL = "https://script.google.com/macros/s/AKfycby0y-rXqKi4fyTXLEOKuBDuTHOoq0mFIgnZNwvS5SQpW9ddryEV-V2kAA3gpsH0Dhwn/exec"; 
 
 const OWNER_PIN = "20094316";
 const ENGINEER_PIN = "15777672";
@@ -150,7 +150,7 @@ const triggerGoogleSheetSync = (dataPayload: any) => {
 
 function App() {
   const [role, setRole] = useState<UserRole>(null);
-  const [viewState, setViewState] = useState<ViewState>('login'); // 처음엔 무조건 로그인 화면
+  const [viewState, setViewState] = useState<ViewState>('login');
   const [pinInput, setPinInput] = useState('');
   const [authError, setAuthError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -179,23 +179,24 @@ function App() {
     setTimeout(() => setToast(null), 3000);
   };
 
-  // 🌟 [핵심] 로그인 성공 시 구글 시트와 데이터를 실질적으로 동기화하는 함수
+  // 🌟 [핵심 삽입] 로그인 직후 구글 시트 데이터를 실제로 가져오는 실질적 동기화 함수
   const syncWithGoogleSheet = async (targetRole: UserRole) => {
-    setViewState('loading'); // 동기화 중 화면 표시
+    setViewState('loading'); // "구글 시트 실시간 동기화 중..." 화면 표시
     try {
       const response = await fetch(GOOGLE_SHEET_URL);
       const remoteData = await response.json();
       
+      // 시트에 데이터가 있으면 가져오고, 없으면 빈 목록으로 로컬 찌꺼기 제거
       if (remoteData && Array.isArray(remoteData)) {
         setContracts(remoteData);
         localStorage.setItem("itscare_contracts_v1", JSON.stringify(remoteData));
-        console.log("구글 시트 동기화 완료:", remoteData.length, "건");
+        console.log("구글 시트 동기화 성공:", remoteData.length, "건");
       }
     } catch (err) {
-      console.error("동기화 실패, 로컬 데이터를 사용합니다.");
+      console.error("실시간 동기화 실패. 마지막 로컬 데이터를 사용합니다.");
       loadLocalContracts();
     } finally {
-      // 동기화 완료 후 해당 모드로 이동
+      // 동기화 시도가 끝나면 (성공이든 실패든) 대시보드로 이동
       setViewState(targetRole === 'owner' ? 'owner_dashboard' : 'engineer_editor');
     }
   };
@@ -206,11 +207,11 @@ function App() {
     const input = pinInput.trim();
     if (input === OWNER_PIN) {
       setRole('owner');
-      syncWithGoogleSheet('owner'); // 로그인 성공 후 동기화 시작
+      syncWithGoogleSheet('owner'); // 🌟 로그인 버튼 누른 직후 동기화 실행
       setPinInput('');
     } else if (input === ENGINEER_PIN) {
       setRole('engineer');
-      syncWithGoogleSheet('engineer'); // 로그인 성공 후 동기화 시작
+      syncWithGoogleSheet('engineer'); // 🌟 로그인 버튼 누른 직후 동기화 실행
       setPinInput('');
     } else {
       setAuthError('PIN 번호가 일치하지 않습니다.');
@@ -791,7 +792,7 @@ function App() {
     </div>
   );
 
-  // 🌟 [수정됨] "구글 시트 실시간 동기화 중" 화면 로직
+  // 🌟 [수정됨] 실질적으로 구글 시트 데이터를 가져오는 동안 표시될 로딩 화면
   if (viewState === 'loading') {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50">

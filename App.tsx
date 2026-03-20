@@ -14,7 +14,7 @@ import ContractPaper from './components/ContractPaper';
 
 const DEFAULT_MANAGER_EMAIL = "itscare.clean@gmail.com";
 
-// ✅ [필수입력] 구글 앱스 스크립트 배포 후 생성된 "웹 앱 URL"을 아래에 붙여넣으세요.
+// ✅ [필수입력] 구글 앱스 스크립트 배포 후 생성된 "웹 앱 URL"
 const GOOGLE_SHEET_URL = "https://script.google.com/macros/s/AKfycbzRkI0zGX_kYHedXvIAo0GW471sd1YbJav9MrwCdSw1h9hOmXZMSeSkOWDQgo7Pe2hM/exec"; 
 
 // ✅ 하드코딩된 PIN 번호
@@ -259,18 +259,13 @@ function App() {
     }
 
     // 1. DOM Elements Extraction
-    // Target the inner container provided by ContractPaper
     const rootContent = source.firstElementChild as HTMLElement; 
     if (!rootContent) return;
 
-    // ContractPaper structure:
-    // [0]: Title div
-    // [1]: Section Container (space-y-8)
     const titleBlock = rootContent.children[0] as HTMLElement;
     const sectionContainer = rootContent.children[1] as HTMLElement;
     
     if (!titleBlock || !sectionContainer) {
-        // Fallback for safety
         console.error("DOM structure mismatch");
         setPdfTarget(null);
         return;
@@ -308,7 +303,6 @@ function App() {
             boxSizing: "border-box",
             position: "relative",
         });
-        // Apply Tailwind classes for typography manually to ensure consistency
         page.className = "text-sm leading-relaxed text-gray-800 font-sans";
         return page;
     };
@@ -320,26 +314,20 @@ function App() {
     pages.push(currentPage);
     staging.appendChild(currentPage);
 
-    // Helper: Append Block with smart split check
     const appendBlock = (element: HTMLElement, marginBottom = 0) => {
         const clone = element.cloneNode(true) as HTMLElement;
         clone.style.marginBottom = `${marginBottom}px`;
         
-        // Append to measure
         currentPage.appendChild(clone);
         const blockHeight = clone.offsetHeight + marginBottom;
         
-        // Check if overflows page
         if (currentContentHeight + blockHeight > SAFE_HEIGHT) {
-            // Remove from current
             currentPage.removeChild(clone);
             
-            // Create new page
             currentPage = createNewPage();
             pages.push(currentPage);
             staging.appendChild(currentPage);
             
-            // Reset height tracker and append to new page
             currentContentHeight = 0;
             currentPage.appendChild(clone);
             currentContentHeight += blockHeight;
@@ -348,18 +336,13 @@ function App() {
         }
     };
 
-    // 3. Process Content Blocks
-    // Title
-    appendBlock(titleBlock, 32); // mb-8 approx 32px
+    appendBlock(titleBlock, 32); 
 
-    // Sections
     sections.forEach((sec, idx) => {
-        // Apply spacing manually since we lost the 'space-y-8' context
         const isLast = idx === sections.length - 1;
         appendBlock(sec, isLast ? 0 : 32);
     });
 
-    // 4. Render Pages to PDF
     try {
         const pdf = new jsPDF('p', 'mm', 'a4');
         
@@ -367,7 +350,7 @@ function App() {
             if (i > 0) pdf.addPage();
             
             const canvas = await html2canvas(pages[i], {
-                scale: 2, // High res
+                scale: 2, 
                 logging: false,
                 useCORS: true
             });
@@ -388,25 +371,21 @@ function App() {
     }
   };
 
-  // --- Print Handler ---
   const handlePrint = (targetData: ContractFormState) => {
     setPrintTarget(targetData);
   };
 
-  // Effect to trigger browser print when printTarget is set
   useEffect(() => {
     if (printTarget) {
       const timer = setTimeout(() => {
         window.print();
         setPrintTarget(null);
-      }, 300); // Wait for render
+      }, 300);
       return () => clearTimeout(timer);
     }
   }, [printTarget]);
 
   // --- File Upload Handlers ---
-  
-  // 1. Owner Mode: Add to List (Backup)
   const handleListFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -426,13 +405,12 @@ function App() {
 
             parsedData.forEach((item: any) => {
                 if (!item.shopName) return;
-                // If ID missing, gen new. If ID exists, skip to prevent duplicates unless explicit logic added.
                 if (!item.id) item.id = uid();
                 
                 if (!currentIds.has(item.id)) {
                     merged.push({
                         ...item,
-                        region: item.region || '부산', // Default for legacy data
+                        region: item.region || '부산',
                         status: item.status || 'active'
                     });
                     addedCount++;
@@ -457,7 +435,6 @@ function App() {
     reader.readAsText(file, "utf-8");
   };
 
-  // 2. Editor Mode: Load CSV into Form (Draft)
   const handleEditorFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -546,11 +523,9 @@ function App() {
     return errors;
   };
 
-  // --- Edit Handler (Owner) ---
   const handleEditContract = (c: Contract) => {
     if (!confirm(`[${c.shopName}] 계약서를 수정하시겠습니까?\n작성 화면으로 이동합니다.`)) return;
     
-    // Explicitly set state to ensure editor loads correctly
     const newFormState = {
         ...initialFormState,
         ...c,
@@ -558,13 +533,11 @@ function App() {
     };
     
     setForm(newFormState);
-    setSigPadKey(prev => prev + 1); // Force signature pad reload
+    setSigPadKey(prev => prev + 1); 
     setViewState('owner_editor');
   };
 
-  // --- NEW: Dashboard Handlers ---
-  
-  // 1. Delete Contract
+  // --- Dashboard Handlers ---
   const handleDeleteContract = (id: string) => {
     if(!confirm("정말로 이 계약서를 삭제하시겠습니까?\n삭제된 데이터는 복구할 수 없습니다.")) return;
     
@@ -576,7 +549,6 @@ function App() {
     showToast("삭제되었습니다.");
   };
 
-  // 2. Suspend Contract
   const handleSuspendContract = (id: string, currentStatus: ContractStatus) => {
     const newStatus: ContractStatus = currentStatus === 'suspended' ? 'active' : 'suspended';
     const actionName = newStatus === 'suspended' ? '중지' : '활성화';
@@ -591,28 +563,26 @@ function App() {
     showToast(`계약이 ${actionName}되었습니다.`);
   };
 
-  // 3. Extend Contract (Renew)
   const handleExtendContract = (c: Contract) => {
     if(!confirm(`[${c.shopName}] 계약을 연장하시겠습니까?\n기존 종료일 기준으로 1년 연장된 새 계약서를 작성합니다.`)) return;
 
-    // Calculate new dates
     const oldEnd = new Date(c.contractEnd);
-    const newStart = addMonthsSafe(oldEnd, 0); // Just parse
-    newStart.setDate(newStart.getDate() + 1); // +1 day
+    const newStart = addMonthsSafe(oldEnd, 0); 
+    newStart.setDate(newStart.getDate() + 1); 
     
-    const newEnd = addMonthsSafe(newStart, 12); // +1 Year default
+    const newEnd = addMonthsSafe(newStart, 12); 
 
     const newFormState: ContractFormState = {
         ...initialFormState,
-        ...c, // Copy info
-        id: null, // New ID will be generated on save
+        ...c, 
+        id: null, 
         status: 'active',
         contractStart: fmt(newStart),
         contractEnd: fmt(newEnd),
         firstDate: fmt(newStart),
-        signedDate: '', // Reset signature date
-        signatureDataUrl: null, // Clear signature
-        agree: initialFormState.agree // Reset agreements
+        signedDate: '', 
+        signatureDataUrl: null, 
+        agree: initialFormState.agree 
     };
 
     setForm(newFormState);
@@ -647,21 +617,21 @@ function App() {
         signedDate: form.signedDate || fmt(new Date()),
       } as any;
 
-      // ✅ 구글 시트로 POST 요청 (CORS 문제를 막기 위해 text/plain 사용)
-      const res = await fetch(GOOGLE_SHEET_URL, {
+      // ✅ 구글 시트로 POST 요청 (CORS 회피용 no-cors 모드 추가)
+      await fetch(GOOGLE_SHEET_URL, {
         method: 'POST',
+        mode: 'no-cors', 
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify(payload)
       });
 
-      if (res.ok) {
-        setForm(initialFormState);
-        setSigPadKey(prev => prev + 1);
-        window.history.replaceState(null, '', window.location.pathname);
-        setViewState('success');
-      } else {
-        showToast(`전송 실패: 서버 오류 발생`, 'error');
-      }
+      // no-cors 통신 시 응답 성공 여부를 자바스크립트가 직접 읽을 수 없으므로,
+      // 에러가 throw 되지 않았다면 성공으로 처리합니다.
+      setForm(initialFormState);
+      setSigPadKey(prev => prev + 1);
+      window.history.replaceState(null, '', window.location.pathname);
+      setViewState('success');
+      
     } catch (err) {
       console.error(err);
       showToast("네트워크 오류 또는 구글 연동 오류 발생", 'error');
@@ -700,16 +670,17 @@ function App() {
         signedDate: form.signedDate || fmt(new Date())
      };
 
-     // ✅ 구글 시트로 동기화 POST 요청
+     // ✅ 구글 시트로 동기화 POST 요청 (CORS 회피용 no-cors 모드 추가)
      try {
        await fetch(GOOGLE_SHEET_URL, {
          method: 'POST',
+         mode: 'no-cors', 
          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
          body: JSON.stringify(newContract)
        });
      } catch (err) {
        console.error("구글 시트 동기화 오류", err);
-       // 에러가 나도 로컬에는 저장되도록 계속 진행
+       // 구글 전송 에러가 나더라도 로컬 브라우저엔 저장되도록 진행합니다.
      }
 
      setContracts(prev => {
@@ -746,7 +717,6 @@ function App() {
            <span className="font-bold text-lg text-gray-800 tracking-tight md:hidden">전자계약서</span>
         </div>
         
-        {/* Navigation for Owner */}
         {role === 'owner' && (
           <div className="flex bg-gray-100 rounded-lg p-1 ml-2">
             <button 
@@ -780,10 +750,8 @@ function App() {
         )}
       </div>
 
-      {/* Action Buttons in Header for Desktop */}
       {(viewState === 'engineer_editor' || viewState === 'owner_editor') && (
          <div className="hidden lg:flex items-center gap-2 ml-auto mr-4">
-            {/* CSV Actions for Desktop */}
             <div className="flex items-center gap-1 mr-2 border-r border-gray-200 pr-3">
                  <button 
                   onClick={() => editorFileInputRef.current?.click()} 
@@ -844,8 +812,6 @@ function App() {
     </div>
   );
 
-  // --- Render Views ---
-
   if (viewState === 'loading') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -854,7 +820,6 @@ function App() {
     );
   }
 
-  // 1. LOGIN
   if (viewState === 'login') {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
@@ -887,7 +852,6 @@ function App() {
     );
   }
 
-  // 2. SUCCESS (Engineer)
   if (viewState === 'success' && role === 'engineer') {
     return (
       <div className="min-h-screen bg-emerald-50 flex flex-col items-center justify-center p-6 text-center">
@@ -901,11 +865,9 @@ function App() {
     );
   }
 
-  // 3. OWNER DASHBOARD (LIST VIEW)
   if (viewState === 'owner_dashboard' && role === 'owner') {
     const REGIONS = ['전체', '부산', '울산', '양산', '김해'];
     
-    // Filter Logic
     const filteredContracts = contracts.filter(c => {
         const matchesRegion = regionFilter === '전체' || (c.region || '부산') === regionFilter;
         const matchesSearch = searchTerm === '' 
@@ -1076,7 +1038,6 @@ function App() {
     );
   }
 
-  // 4. EDITOR VIEW (Engineer & Owner Write Mode)
   if (viewState === 'engineer_editor' || viewState === 'owner_editor') {
     return (
       <div className="pt-16 h-screen bg-gray-50 flex flex-col overflow-hidden print:hidden">
@@ -1112,7 +1073,6 @@ function App() {
 
         <div className="flex-1 flex flex-col lg:flex-row w-full lg:max-w-[1380px] lg:mx-auto lg:shadow-2xl lg:border-x border-gray-200 bg-white overflow-hidden h-full">
            
-            {/* LEFT SIDEBAR (FORM) */}
             <div className={`
                 ${mobileTab === 'form' ? 'flex flex-col' : 'hidden'} 
                 lg:flex lg:flex-col w-full lg:w-[400px] bg-white border-r border-gray-200 
@@ -1288,7 +1248,6 @@ function App() {
                </div>
             </div>
 
-            {/* RIGHT CONTENT (PREVIEW) */}
             <div className={`
                 ${mobileTab === 'preview' ? 'flex flex-col' : 'hidden'}
                 lg:flex lg:flex-col flex-1 bg-gray-100/50 lg:bg-gray-100 relative overflow-hidden

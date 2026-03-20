@@ -14,8 +14,8 @@ import ContractPaper from './components/ContractPaper';
 
 const DEFAULT_MANAGER_EMAIL = "itscare.clean@gmail.com";
 
-// ✅ 구글 스크립트 웹 앱 URL (배포 후 받은 URL로 유지)
-const GOOGLE_SHEET_URL = "https://script.google.com/macros/s/AKfycbzwMIQZCkNpfKF5RAuPt06541fsreqTiRZZDMWxo3WtLfesLkXMxV3HZg-3gqEDYcQU/exec"; 
+// ✅ 이미지 주소창에서 확인된 '진짜' 성공 URL로 수정함
+const GOOGLE_SHEET_URL = "https://script.google.com/macros/s/AKfycby0y-rXqKi4fyTXLEOKuBDuTHOoq0mFIgnZNwvS5SQpW9ddryEV-V2kAA3gpsH0Dhwn/exec"; 
 
 const OWNER_PIN = "20094316";
 const ENGINEER_PIN = "15777672";
@@ -135,13 +135,13 @@ const csvToJson = (csv: string) => {
   return result;
 };
 
-// 🌟 수정한 전송 함수: 구글 스크립트의 CORS 우회를 위해 mode: 'no-cors'를 사용합니다.
+// 🌟 구글 시트 전송 함수: text/plain으로 보내야 구글 보안벽(CORS)을 가장 잘 통과합니다.
 const triggerGoogleSheetSync = (dataPayload: any) => {
   fetch(GOOGLE_SHEET_URL, {
     method: 'POST',
-    mode: 'no-cors', // 구글 스크립트 리다이렉트 대응
+    mode: 'no-cors', 
     headers: {
-      'Content-Type': 'text/plain', // 프리플라이트 요청 방지를 위해 plain 사용
+      'Content-Type': 'text/plain', 
     },
     body: JSON.stringify(dataPayload)
   }).catch((err) => {
